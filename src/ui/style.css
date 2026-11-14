@@ -1,0 +1,803 @@
+/* Стили. Сначала телефон (вертикально), потом — широкие экраны. */
+
+:root {
+  --felt: #17513a;
+  --felt-dark: #0f3a29;
+  --felt-light: #1f6a4c;
+  --ink: #f3f0e6;
+  --ink-dim: #b9cdbf;
+  --gold: #f2c14e;
+  --red: #c8283c;
+  --black: #1d2127;
+  --paper: #fbf6e6;
+  --paper-line: #d9cfb3;
+  --card-w: clamp(46px, 13.5vw, 84px);
+  --trick-w: clamp(44px, 13vw, 78px);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--felt-dark);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.35;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+#app {
+  height: 100vh;
+  height: 100dvh;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+/* ---------- Кнопки ---------- */
+
+.btn {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+  padding: 10px 16px;
+  min-height: 44px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.btn:focus-visible,
+.card:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.btn.primary {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #2a2208;
+}
+
+.btn.primary:hover {
+  background: #f7cf6d;
+}
+
+.btn.small {
+  padding: 6px 10px;
+  min-height: 36px;
+  font-size: 14px;
+}
+
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ---------- Карты ---------- */
+
+.card {
+  position: relative;
+  display: block;
+  width: var(--card-w);
+  aspect-ratio: 5 / 7;
+  flex: none;
+  padding: 0;
+  background: #fffdf7;
+  border: 1px solid #b8b29f;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 700;
+  user-select: none;
+}
+
+.card.red {
+  color: var(--red);
+}
+
+.card.black {
+  color: var(--black);
+}
+
+.card .corner {
+  position: absolute;
+  top: 3px;
+  left: 4px;
+  font-size: calc(var(--card-w) * 0.27);
+  line-height: 1;
+  text-align: center;
+}
+
+.card .pip {
+  position: absolute;
+  right: 6%;
+  bottom: 4%;
+  font-size: calc(var(--card-w) * 0.52);
+  line-height: 1;
+}
+
+.card.joker {
+  background: linear-gradient(160deg, #fff6d6, #f6d977);
+  border-color: #b08a1d;
+}
+
+.card.joker .pip {
+  color: #b3541e;
+}
+
+button.card {
+  cursor: pointer;
+  transition: transform 0.12s ease;
+  touch-action: manipulation;
+}
+
+button.card:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.card.playable {
+  transform: translateY(-10px);
+  box-shadow: 0 0 0 2px var(--gold), 0 6px 10px rgba(0, 0, 0, 0.4);
+}
+
+.card.playable:hover {
+  transform: translateY(-16px);
+}
+
+.card.blocked {
+  filter: brightness(0.6);
+}
+
+.card.mini {
+  --card-w: 30px;
+  display: inline-block;
+  vertical-align: middle;
+  border-radius: 5px;
+}
+
+.card.mini .pip {
+  display: none;
+}
+
+.card.mini .corner {
+  position: static;
+  display: block;
+  padding-top: 5px;
+  font-size: 13px;
+}
+
+.card.big {
+  --card-w: 92px;
+  margin: 0 auto;
+  transform: rotate(-6deg);
+}
+
+.suit.red {
+  color: var(--red);
+}
+
+.suit.black {
+  color: var(--black);
+}
+
+/* ---------- Экран игры ---------- */
+
+.game {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(ellipse at 50% 40%, var(--felt-light), var(--felt) 55%, var(--felt-dark));
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.round-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.round-info .mode {
+  color: var(--gold);
+  font-size: 14px;
+}
+
+.trump {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.trump-none {
+  color: var(--ink-dim);
+}
+
+.top-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.table {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(76px, 1fr) minmax(0, 3fr) minmax(76px, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    '. top .'
+    'left trick right';
+  gap: 4px;
+  padding: 8px 6px 0;
+}
+
+.seat {
+  align-self: center;
+  justify-self: center;
+  text-align: center;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 2px solid transparent;
+  font-size: 12.5px;
+  min-width: 74px;
+}
+
+.seat-top {
+  grid-area: top;
+}
+
+.seat-left {
+  grid-area: left;
+}
+
+.seat-right {
+  grid-area: right;
+}
+
+.seat.active,
+.me.active .me-info {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(242, 193, 78, 0.45);
+}
+
+.seat-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.seat-score {
+  color: var(--gold);
+}
+
+.seat-bid {
+  color: var(--ink-dim);
+}
+
+.seat-bid b {
+  color: var(--ink);
+}
+
+.seat-cards {
+  min-height: 18px;
+  color: var(--ink-dim);
+}
+
+.back {
+  display: inline-block;
+  width: 11px;
+  height: 15px;
+  margin-right: 3px;
+  vertical-align: -2px;
+  border-radius: 2px;
+  border: 1px solid #f3e9c8;
+  background: repeating-linear-gradient(45deg, #8d2231, #8d2231 2px, #b23a4a 2px, #b23a4a 4px);
+}
+
+.badge {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #2a2208;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+
+/* Взятка на столе: четыре места крестом. */
+.trick {
+  grid-area: trick;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  grid-template-areas:
+    'l t r'
+    'l b r';
+  align-items: center;
+  justify-items: center;
+  --card-w: var(--trick-w);
+  min-height: calc(var(--trick-w) * 2.9);
+}
+
+.slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: var(--trick-w);
+  min-height: calc(var(--trick-w) * 1.4);
+  border-radius: 8px;
+}
+
+.slot:empty {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+}
+
+.slot-top {
+  grid-area: t;
+}
+
+.slot-bottom {
+  grid-area: b;
+}
+
+.slot-left {
+  grid-area: l;
+}
+
+.slot-right {
+  grid-area: r;
+}
+
+.card.pop {
+  animation: pop 0.22s ease-out;
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.card.winner {
+  box-shadow: 0 0 0 3px var(--gold), 0 0 16px 4px rgba(242, 193, 78, 0.7);
+}
+
+.joker-note {
+  position: absolute;
+  top: 100%;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--gold);
+  font-size: 11px;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+/* Подсказка и кнопки действия. */
+.status {
+  padding: 6px 10px;
+  text-align: center;
+  min-height: 84px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.status-text {
+  margin: 0;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.actions:empty {
+  display: none;
+}
+
+.bids {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn.bid {
+  min-width: 44px;
+  padding: 8px 0;
+  font-size: 17px;
+}
+
+/* Игрок-человек. */
+.me {
+  padding: 4px 10px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.me-info {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin: 0 auto 4px;
+  padding: 3px 12px;
+  width: fit-content;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--ink-dim);
+}
+
+.me-info b {
+  color: var(--ink);
+}
+
+.hand {
+  display: flex;
+  justify-content: center;
+  min-height: calc(var(--card-w) * 1.4 + 18px);
+  padding-top: 18px;
+}
+
+/* Карты накладываются друг на друга, если не помещаются в ширину. */
+.hand-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: calc(var(--card-w) + 6px);
+}
+
+.hand-cell:last-child {
+  flex: 0 0 var(--card-w);
+}
+
+.hand-empty {
+  color: var(--ink-dim);
+  align-self: center;
+}
+
+/* ---------- Меню ---------- */
+
+.menu {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+  background: radial-gradient(ellipse at 50% 30%, var(--felt-light), var(--felt-dark));
+  overflow-y: auto;
+}
+
+.menu-card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+}
+
+.menu h1 {
+  margin: 8px 0 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 34px;
+  text-wrap: balance;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--gold);
+  letter-spacing: 0.04em;
+}
+
+.lead {
+  margin: 4px 0 10px;
+  color: var(--ink-dim);
+}
+
+.settings {
+  margin-top: 8px;
+  padding: 10px 12px;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+}
+
+.settings summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+
+.setting select {
+  font: inherit;
+  padding: 8px;
+  min-height: 40px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: var(--felt-dark);
+  color: var(--ink);
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+/* ---------- Окна ---------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 10;
+}
+
+.modal {
+  width: 100%;
+  max-width: 440px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1c2b24;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.modal.wide {
+  max-width: 720px;
+}
+
+.modal h2 {
+  margin: 0;
+  padding: 14px 16px 8px;
+  font-size: 19px;
+  text-wrap: balance;
+}
+
+.modal-body {
+  padding: 0 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.modal-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px 14px;
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.choice-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.choice-btn small {
+  font-weight: 400;
+  color: var(--ink-dim);
+}
+
+.rules {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.rules li {
+  margin-bottom: 8px;
+}
+
+.result {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.result th,
+.result td {
+  padding: 7px 6px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.result th {
+  font-size: 13px;
+  color: var(--ink-dim);
+  font-weight: 600;
+}
+
+.result .left {
+  text-align: left;
+}
+
+.pos {
+  color: #7ddc9a;
+}
+
+.neg {
+  color: #ff8d8d;
+}
+
+/* Таблица очков — как бумажный лист. */
+.sheet-wrap {
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--paper);
+  color: #2b2a26;
+}
+
+.sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet th,
+.sheet td {
+  padding: 3px 5px;
+  text-align: center;
+  border: 1px solid var(--paper-line);
+  white-space: nowrap;
+}
+
+.sheet thead th {
+  position: sticky;
+  top: 0;
+  background: #efe6c9;
+  font-size: 12.5px;
+}
+
+.sheet .rname {
+  text-align: left;
+}
+
+.sheet .num {
+  color: #8a826b;
+}
+
+.sheet .bt {
+  display: block;
+  font-size: 11px;
+  color: #6d6652;
+}
+
+.sheet .pos {
+  color: #1d7a3d;
+}
+
+.sheet .neg {
+  color: #b3261e;
+}
+
+.sheet tr.current td {
+  background: #fff3bf;
+}
+
+.sheet tfoot td {
+  font-weight: 800;
+  font-size: 15px;
+  background: #efe6c9;
+}
+
+.sheet tfoot td.best {
+  background: var(--gold);
+}
+
+/* ---------- Широкий экран (компьютер, планшет) ---------- */
+
+@media (min-width: 720px) {
+  body {
+    font-size: 16px;
+  }
+
+  :root {
+    --card-w: 84px;
+    --trick-w: 84px;
+  }
+
+  .seat {
+    font-size: 14px;
+    min-width: 120px;
+    padding: 8px 12px;
+  }
+
+  .table {
+    padding: 14px 12px 0;
+  }
+
+  .sheet {
+    font-size: 14px;
+  }
+}
+
+/* Низкий экран (телефон горизонтально): уменьшаем карты, чтобы всё поместилось. */
+@media (max-height: 560px) {
+  :root {
+    --card-w: clamp(40px, 9vh, 60px);
+    --trick-w: clamp(38px, 9vh, 56px);
+  }
+
+  .status {
+    min-height: 0;
+  }
+
+  .hand {
+    padding-top: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.pop {
+    animation: none;
+  }
+
+  button.card {
+    transition: none;
+  }
+}
