@@ -69,6 +69,11 @@ function signed(n: number): string {
   return n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '0';
 }
 
+/** Число с настоящим знаком «минус». */
+function plain(n: number): string {
+  return n < 0 ? `−${Math.abs(n)}` : String(n);
+}
+
 function isRed(suit: Suit): boolean {
   return suit === 'diamonds' || suit === 'hearts';
 }
@@ -216,7 +221,7 @@ function seatHtml(game: GameState, player: number, position: string): string {
   const cards = game.hands[player]?.length ?? 0;
   return `<div class="seat seat-${position} ${active ? 'active' : ''}">
     <div class="seat-name">${game.playerNames[player]} ${dealer}</div>
-    <div class="seat-score">${totals(game)[player]} очк.</div>
+    <div class="seat-score">${plain(totals(game)[player])} очк.</div>
     <div class="seat-bid">${bidLine(game, player)}</div>
     <div class="seat-cards">${cards > 0 ? `<span class="back"></span>×${cards}` : ''}</div>
   </div>`;
@@ -333,7 +338,7 @@ function handHtml(game: GameState): string {
     <div class="me-info">
       <span class="seat-name">Вы ${dealer}</span>
       <span>${bidLine(game, HUMAN)}</span>
-      <span class="seat-score">${totals(game)[HUMAN]} очк.</span>
+      <span class="seat-score">${plain(totals(game)[HUMAN])} очк.</span>
     </div>
     <div class="hand">${cards || '<span class="hand-empty">карт пока нет</span>'}</div>
   </section>`;
@@ -371,7 +376,7 @@ export function sheetHtml(game: GameState): string {
   const sums = totals(game);
   const best = game.phase === 'gameOver' ? winners(sums) : [];
   const foot = sums
-    .map((sum, i) => `<td class="${best.includes(i) ? 'best' : ''}">${sum}</td>`)
+    .map((sum, i) => `<td class="${best.includes(i) ? 'best' : ''}">${plain(sum)}</td>`)
     .join('');
   return `<div class="sheet-wrap"><table class="sheet">
     <thead><tr><th>№</th><th>Раунд</th><th>Коз.</th>${head}</tr></thead>
@@ -443,7 +448,7 @@ function roundEndHtml(game: GameState): string {
         ${withBids ? `<td>${cell.bid}</td>` : ''}
         <td>${cell.tricks}${cell.star ? ' ★' : ''}</td>
         <td><b class="${cls}">${signed(cell.points)}</b>${cell.penalty < 0 ? ' ✂' : ''}</td>
-        <td><b>${cell.total}</b></td>
+        <td><b>${plain(cell.total)}</b></td>
       </tr>`;
     })
     .join('');

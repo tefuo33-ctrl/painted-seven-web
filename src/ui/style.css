@@ -346,6 +346,9 @@ button.card:disabled {
   justify-items: center;
   --card-w: var(--trick-w);
   min-height: calc(var(--trick-w) * 2.9);
+  width: 100%;
+  max-width: 440px;
+  justify-self: center;
 }
 
 .slot {
