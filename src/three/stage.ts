@@ -1,4 +1,4 @@
-// Сцена целиком: рендер в низком разрешении, камера, свет, эффекты поверх картинки.
+// Сцена целиком: рендер, камера с вращением и зумом, свет с тенями, эффекты поверх картинки.
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -8,7 +8,8 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { gfx, updateSnap } from './gfx';
 import { buildLocation } from './location';
-import { buildChairs, buildTable } from './table';
+import { type Obstacle, type OrbitView, OrbitCamera } from './orbit';
+import { SEATS, buildChairs, buildChipStacks, buildTable } from './table';
 
 /** Виньетка: края кадра слегка темнеют. */
 const VignetteShader = {
@@ -34,37 +35,70 @@ const VignetteShader = {
     }`,
 };
 
+export type StageView = 'table' | 'wardrobe';
+
 export interface Stage {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   /** Холст, на котором рисуется сцена (для нажатий). */
   canvas: HTMLCanvasElement;
   /** Где на экране находится точка сцены: координаты в пикселях страницы. */
-  toScreen(point: THREE.Vector3): { x: number; y: number };
+  toScreen(point: THREE.Vector3): { x: number; y: number; visible: boolean };
   /** Куда смотрит камера: на стол или на персонажа в «Гардеробе». */
-  setView(view: 'table' | 'wardrobe'): void;
+  setView(view: StageView): void;
+  /** Вернуть камеру в исходное положение. */
+  resetView(): void;
+  /** Игрок повернул или приблизил камеру? (тогда показываем кнопку «вернуть вид») */
+  viewChanged(): boolean;
+  /** Камера далеко от моего места — можно показать моего персонажа со стороны. */
+  awayFromSeat(): boolean;
+  /** Последнее нажатие было вращением камеры, а не кликом? */
+  consumeDrag(): boolean;
   /** Применить изменённые настройки из `gfx`. */
   applySettings(): void;
   /** Добавить функцию, которая вызывается каждый кадр (time и delta — в секундах). */
   onFrame(callback: (time: number, delta: number) => void): void;
 }
 
+/** Точка, вокруг которой стоит персонаж в «Гардеробе». */
+export const WARDROBE_SPOT = new THREE.Vector3(0, 0, 16);
+
 export function createStage(container: HTMLElement): Stage {
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(1);
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.domElement.style.width = '100%';
   renderer.domElement.style.height = '100%';
   renderer.domElement.style.imageRendering = 'pixelated';
   renderer.domElement.style.display = 'block';
+  renderer.domElement.style.touchAction = 'none';
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(50, 1, 3, 600);
+  const camera = new THREE.PerspectiveCamera(50, 1, 1.2, 600);
 
   const location = buildLocation(scene);
   scene.add(location.group);
-  scene.add(buildTable());
-  scene.add(buildChairs());
+  const table = buildTable();
+  scene.add(table);
+  const chairs = buildChairs();
+  scene.add(chairs.group);
+  scene.add(buildChipStacks());
+
+  // Главный свет с тенями: сверху и чуть со стороны заката.
+  const key = new THREE.DirectionalLight(0xffc890, 1.25);
+  key.position.set(-7, 17, -10);
+  key.target.position.set(0, 0, 1);
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.camera.left = -15;
+  key.shadow.camera.right = 15;
+  key.shadow.camera.top = 15;
+  key.shadow.camera.bottom = -15;
+  key.shadow.camera.near = 2;
+  key.shadow.camera.far = 50;
+  key.shadow.bias = -0.0025;
+  key.shadow.normalBias = 0.04;
+  scene.add(key, key.target);
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
@@ -74,15 +108,63 @@ export function createStage(container: HTMLElement): Stage {
   composer.addPass(vignette);
   composer.addPass(new OutputPass());
 
-  // Положение камеры: за моим местом, чуть сверху. На вертикальном экране — выше и дальше,
-  // чтобы стол помещался по ширине.
-  const basePosition = new THREE.Vector3();
-  const lookAt = new THREE.Vector3();
-  let view: 'table' | 'wardrobe' = 'table';
+  // ---------- Камера ----------
 
-  // В «Гардеробе» персонаж стоит спиной к закату — подсвечиваем его спереди.
-  const wardrobeLight = new THREE.PointLight(0xffe2b8, 0, 40, 1);
-  wardrobeLight.position.set(3, 3, 25);
+  let view: StageView = 'table';
+
+  /** Обзор «за столом»: на уровне глаз сидящего игрока, стол — перед ним. */
+  function tableView(aspect: number): OrbitView {
+    const narrow = THREE.MathUtils.clamp((1.3 - aspect) / 0.8, 0, 1); // 1 — вертикальный телефон
+    return {
+      target: new THREE.Vector3(0, 0.9, -0.4),
+      azimuth: 0,
+      elevation: THREE.MathUtils.lerp(0.3, 0.5, narrow),
+      distance: THREE.MathUtils.lerp(11.4, 15.5, narrow),
+      minDistance: 4.5,
+      maxDistance: 16,
+      minElevation: 0.1,
+      maxElevation: 1.15,
+    };
+  }
+
+  function wardrobeView(aspect: number): OrbitView {
+    return {
+      target: new THREE.Vector3(WARDROBE_SPOT.x, -0.4, WARDROBE_SPOT.z),
+      azimuth: 0,
+      elevation: 0.06,
+      distance: aspect < 1 ? 15.5 : 12.5,
+      minDistance: 4,
+      maxDistance: 18,
+      minElevation: -0.15,
+      maxElevation: 0.9,
+    };
+  }
+
+  const orbit = new OrbitCamera(camera, renderer.domElement, tableView(1.6));
+
+  /** Препятствия для камеры за столом: кресла соперников с сидящими в них игроками. */
+  const tableObstacles: Obstacle[] = SEATS.slice(1).map((seat) => ({ x: seat.x, z: seat.z, radius: 3.3, top: 7.4 }));
+
+  function applyView(instant: boolean): void {
+    const aspect = camera.aspect;
+    if (view === 'table') {
+      orbit.setView(tableView(aspect), instant);
+      orbit.obstacles = tableObstacles;
+      orbit.maxRadius = 12.2; // дальше — балюстрада и колонны
+      orbit.minHeight = 0.9;
+      orbit.maxHeight = 10.5;
+      camera.clearViewOffset();
+    } else {
+      orbit.setView(wardrobeView(aspect), instant);
+      orbit.obstacles = [];
+      orbit.maxRadius = Infinity;
+      orbit.minHeight = -3.4;
+      orbit.maxHeight = 12;
+    }
+  }
+
+  // В «Гардеробе» персонаж стоит спиной к закату — подсвечиваем его спереди и сбоку.
+  const wardrobeLight = new THREE.PointLight(0xffe2b8, 0, 60, 1);
   scene.add(wardrobeLight);
 
   function resize(): void {
@@ -90,29 +172,26 @@ export function createStage(container: HTMLElement): Stage {
     const height = Math.max(1, container.clientHeight);
     // Считаем в настоящих пикселях экрана: у телефонов их в 2–3 раза больше, чем «точек» в браузере.
     // На «низком» качестве плотность экрана не учитываем — картинка мельче, зато быстрее.
-    const ratio = gfx.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 3);
+    const ratio = gfx.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     const density = ratio / gfx.pixelScale;
-    const renderWidth = Math.max(160, Math.round(width * density));
-    const renderHeight = Math.max(120, Math.round(height * density));
+    const renderWidth = Math.max(200, Math.round(width * density));
+    const renderHeight = Math.max(150, Math.round(height * density));
     renderer.setSize(renderWidth, renderHeight, false);
     composer.setSize(renderWidth, renderHeight);
     updateSnap(renderWidth, renderHeight);
 
     const aspect = width / height;
+    const aspectChanged = Math.abs(camera.aspect - aspect) > 0.01;
     camera.aspect = aspect;
-    // Держим в кадре стол и боковых игроков: чем уже экран, тем шире угол обзора,
-    // а на вертикальном экране камера ещё и отходит назад и вверх.
-    const neededFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(39)) / aspect));
-    camera.fov = THREE.MathUtils.clamp(neededFov, 50, 76);
-    const t = (camera.fov - 50) / 26; // 0 — широкий экран, 1 — узкий вертикальный
-    basePosition.set(0, THREE.MathUtils.lerp(7.2, 10.5, t), THREE.MathUtils.lerp(11, 14.5, t));
-    lookAt.set(0, THREE.MathUtils.lerp(0.9, 0.6, t), THREE.MathUtils.lerp(-3.5, -2.5, t));
-    if (view === 'wardrobe') {
-      // На широком экране панель справа — персонаж смещён влево; на узком панель снизу.
-      const wide = aspect >= 1;
-      camera.fov = wide ? 46 : 62;
-      basePosition.set(wide ? 2.6 : 0, 0.8, wide ? 29 : 31);
-      lookAt.set(wide ? 2.6 : 0, wide ? -0.1 : -2.6, 16);
+    // Чем уже экран, тем шире угол обзора — чтобы боковые игроки оставались в кадре.
+    const neededFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(46)) / aspect));
+    camera.fov = view === 'wardrobe' ? (aspect < 1 ? 60 : 44) : THREE.MathUtils.clamp(neededFov, 56, 80);
+    if (aspectChanged) applyView(true);
+    if (view === 'wardrobe' && aspect >= 1) {
+      // На широком экране панель гардероба справа — сдвигаем картинку влево.
+      camera.setViewOffset(width, height, width * 0.16, 0, width, height);
+    } else {
+      camera.clearViewOffset();
     }
     camera.updateProjectionMatrix();
   }
@@ -123,8 +202,24 @@ export function createStage(container: HTMLElement): Stage {
     bloom.strength = gfx.bloomStrength;
     vignette.enabled = gfx.vignette > 0 && high;
     vignette.uniforms.uStrength.value = gfx.vignette;
+    renderer.shadowMap.enabled = high;
+    key.castShadow = high;
     resize();
   }
+
+  // Двойное нажатие — приблизиться к предмету, чтобы рассмотреть его.
+  const raycaster = new THREE.Raycaster();
+  renderer.domElement.addEventListener('dblclick', (event) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(pointer, camera);
+    raycaster.far = 40; // фон (море, город) не приближаем
+    const hit = raycaster.intersectObjects(scene.children, true).find((h) => h.object.visible && h.distance > 2);
+    if (hit) orbit.focus(hit.point, view === 'wardrobe' ? 4.5 : 5);
+  });
 
   const callbacks: ((time: number, delta: number) => void)[] = [];
   const clock = new THREE.Clock();
@@ -132,22 +227,26 @@ export function createStage(container: HTMLElement): Stage {
   function frame(): void {
     const delta = Math.min(clock.getDelta(), 0.1);
     const time = clock.elapsedTime;
-    // Лёгкое покачивание камеры.
-    camera.position.set(
-      basePosition.x + Math.sin(time * 0.4) * 0.08,
-      basePosition.y + Math.sin(time * 0.6) * 0.05,
-      basePosition.z,
-    );
-    camera.lookAt(lookAt);
-    camera.updateMatrixWorld();
+    orbit.update(delta);
+    if (view === 'wardrobe') {
+      // Свет держится у камеры, чтобы персонаж был хорошо виден с любой стороны.
+      wardrobeLight.position.copy(camera.position).add(new THREE.Vector3(0, 2.5, 0));
+    }
     location.update(time);
+    // Своё кресло видно, только когда камера ушла со своего места.
+    chairs.own.visible = view === 'table' && awayFromSeat();
     for (const callback of callbacks) callback(time, delta);
     composer.render(delta);
+  }
+
+  function awayFromSeat(): boolean {
+    return Math.abs(orbit.azimuthFromHome) > 0.55 || orbit.distanceFromHome > 2.2;
   }
 
   // Следим за размером контейнера (а не только окна): так сцена не растягивается при любом изменении.
   new ResizeObserver(resize).observe(container);
   applySettings();
+  applyView(true);
   renderer.setAnimationLoop(frame);
 
   const projected = new THREE.Vector3();
@@ -161,14 +260,20 @@ export function createStage(container: HTMLElement): Stage {
       return {
         x: ((projected.x + 1) / 2) * container.clientWidth,
         y: ((1 - projected.y) / 2) * container.clientHeight,
+        visible: projected.z < 1 && Math.abs(projected.x) < 1.15 && Math.abs(projected.y) < 1.15,
       };
     },
     applySettings,
     setView(next) {
       view = next;
-      wardrobeLight.intensity = next === 'wardrobe' ? 22 : 0;
+      wardrobeLight.intensity = next === 'wardrobe' ? 26 : 0;
+      applyView(true);
       resize();
     },
+    resetView: () => orbit.reset(),
+    viewChanged: () => orbit.offset > 0.12,
+    awayFromSeat,
+    consumeDrag: () => orbit.consumeDrag(),
     onFrame(callback) {
       callbacks.push(callback);
     },

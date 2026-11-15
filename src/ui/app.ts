@@ -88,6 +88,10 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   const table = new TableView(stage);
   const marker = new TurnMarker(stage);
   const players = new Players(stage);
+  table.handAnchor = (seat) => {
+    const position = players.handPosition(seat);
+    return position ? { position } : null;
+  };
   let skins: (Skin | null)[] = [];
 
   /** Номер «запуска» игры. Меняется при выходе в меню — старые таймеры это видят и молчат. */
@@ -130,7 +134,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       const seat = Number(plate.dataset.seat);
       if (seat === 0) return;
       const spot = SEATS[seat];
-      const point = stage.toScreen(anchor.set(spot.x, 5.2, spot.z));
+      const point = stage.toScreen(anchor.set(spot.x, 4.9, spot.z));
       // Не даём табличке уйти за край экрана.
       const half = plate.offsetWidth / 2 + 6;
       const x = Math.min(Math.max(point.x, half), root.clientWidth - half);
@@ -426,7 +430,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
           const myName = displayName(ui.profile);
           const names = pickBotNames(genders, [myName]);
           startGame(createGame({ settings: ui.settings, playerNames: [myName, ...names] }), [
-            null,
+            ui.profile.skin,
             ...genders.map((gender) => randomSkin(gender)),
           ]);
         }
@@ -572,6 +576,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
 
   // Нажатия на 3D-сцену: выбор карты в руке или ускорение показа взятки.
   stage.canvas.addEventListener('click', (event) => {
+    if (stage.consumeDrag()) return; // это было вращение камеры, а не нажатие
     if (ui.screen !== 'game' || ui.modal.kind !== 'none') return;
     if (skipTrickWait) {
       skipTrickWait();

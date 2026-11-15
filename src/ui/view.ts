@@ -167,12 +167,12 @@ function wardrobeHtml(ui: UiState): string {
   const { skin, name } = ui.profile;
   const male = skin.gender === 'male';
   const options = male
-    ? `<div class="row">${SUITS_MALE.map((s, i) => segment('suit', i, s.name, skin.suit === i)).join('')}</div>
-       <p class="row-title">Галстук: ${TIES[skin.tie].name.toLowerCase()}</p>
-       <div class="row">${swatches('tie', TIES, skin.tie)}</div>`
-    : `<div class="row">${HAIR_FEMALE.map((h, i) => segment('hair', i, h, skin.hair === i)).join('')}</div>
-       <p class="row-title">Рубашка: ${SHIRTS[skin.shirt].name.toLowerCase()}</p>
-       <div class="row">${swatches('shirt', SHIRTS, skin.shirt)}</div>`;
+    ? `<div class="row">${SUITS_MALE.map((s, i) => segment('suit', i, s.key, skin.suit === i)).join('')}</div>
+       <p class="row-title">Галстук: ${TIES[skin.tie].key}</p>
+       <div class="row">${swatches('tie', TIES as never, skin.tie)}</div>`
+    : `<div class="row">${HAIR_FEMALE.map((h, i) => segment('hair', i, h.key, skin.hair === i)).join('')}</div>
+       <p class="row-title">Рубашка: ${SHIRTS[skin.shirt].key}</p>
+       <div class="row">${swatches('shirt', SHIRTS as never, skin.shirt)}</div>`;
   return `<div class="wardrobe">
     <h2>Гардероб</h2>
     <label class="name-field">Ваше имя

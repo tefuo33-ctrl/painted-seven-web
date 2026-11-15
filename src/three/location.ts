@@ -122,11 +122,8 @@ function buildSea(group: THREE.Group): (time: number) => void {
   light.position.y = SEA_Y + 0.9; // заметный зазор над водой: иначе полоса мерцает вдалеке
   group.add(light);
 
-  return (time) => {
-    waves.offset.y = time * 0.03;
-    waves.offset.x = Math.sin(time * 0.2) * 0.02;
-    path.offset.y = Math.floor(time * 6) / 32; // шагами, как старая анимация
-  };
+  // Море и город — неподвижный фон: ничего не анимируем.
+  return () => {};
 }
 
 function buildBoatAndTown(group: THREE.Group): void {
@@ -415,7 +412,7 @@ function buildSideTable(): THREE.Group {
 function buildLantern(group: THREE.Group): (time: number) => void {
   const lantern = new THREE.Group();
   const iron = flat(0x1c1612);
-  const y = 6.3;
+  const y = 7.6;
 
   const chain = new THREE.Mesh(new THREE.BoxGeometry(0.12, CEILING_Y - y - 1.2, 0.12), iron);
   chain.position.y = (CEILING_Y + y + 1.2) / 2;
@@ -463,12 +460,82 @@ function buildLantern(group: THREE.Group): (time: number) => void {
   };
 }
 
+/** Дальние планы: острова слева и гряды гор за городком — фон получает глубину. */
+function buildHorizon(group: THREE.Group): void {
+  // Гряда — зубчатый силуэт; чем дальше, тем светлее и «туманнее».
+  const ridge = (x0: number, x1: number, z: number, heights: number[], color: number) => {
+    const builder = new FacetBuilder();
+    const step = (x1 - x0) / (heights.length - 1);
+    for (let i = 0; i < heights.length - 1; i++) {
+      const a = x0 + i * step;
+      const b = a + step;
+      builder.quad(
+        { x: a, y: SEA_Y - 1, z },
+        { x: b, y: SEA_Y - 1, z },
+        { x: b, y: SEA_Y + heights[i + 1], z },
+        { x: a, y: SEA_Y + heights[i], z },
+        color,
+      );
+    }
+    group.add(new THREE.Mesh(builder.build(), new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide })));
+  };
+  ridge(110, 420, SKY_Z + 8, [10, 34, 52, 40, 66, 58, 80, 62, 90], 0x6a4a82);
+  ridge(60, 420, SKY_Z + 22, [4, 18, 30, 24, 44, 36, 52, 70], 0x4f3a6a);
+  // Острова слева на горизонте.
+  ridge(-330, -190, SKY_Z + 10, [0, 9, 16, 12, 20, 8, 0], 0x6a4a82);
+  ridge(-170, -110, SKY_Z + 12, [0, 6, 10, 5, 0], 0x7a5688);
+}
+
+/** Украшения террасы: настенные фонари, вторая пальма, кадки с кустами. */
+function buildDecor(group: THREE.Group): void {
+  const iron = flat(0x1c1612);
+  for (const x of [-9.5, 9.5]) {
+    const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.9), iron);
+    bracket.position.set(x, 5.2, EDGE_Z + 1.2);
+    group.add(bracket);
+    const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.24, 0.7, 4), glow(0xe0a850, { fog: false }));
+    lamp.position.set(x, 4.75, EDGE_Z + 1.6);
+    lamp.rotation.y = Math.PI / 4;
+    group.add(lamp);
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.4, 4), iron);
+    cap.position.set(x, 5.3, EDGE_Z + 1.6);
+    cap.rotation.y = Math.PI / 4;
+    group.add(cap);
+  }
+
+  const palm = buildPalm();
+  palm.position.set(18.5, FLOOR_Y, -8);
+  palm.scale.setScalar(0.85);
+  palm.rotation.y = 1.3;
+  group.add(palm);
+
+  const random = seededRandom(31);
+  for (const x of [-14, 14, -23, 23]) {
+    const planter = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.3, 1.5), flat(0xa85a38));
+    planter.position.set(x, FLOOR_Y + 0.65, EDGE_Z + 1.6);
+    group.add(planter);
+    for (let i = 0; i < 4; i++) {
+      const bush = new THREE.Mesh(new THREE.IcosahedronGeometry(0.6 + random() * 0.35, 0), flat(i % 2 === 0 ? 0x2f6a3a : 0x3d7a44));
+      bush.position.set(x - 0.9 + i * 0.6, FLOOR_Y + 1.6 + random() * 0.3, EDGE_Z + 1.6 + (random() - 0.5) * 0.4);
+      bush.rotation.set(random() * 3, random() * 3, 0);
+      group.add(bush);
+    }
+    if (Math.abs(x) < 20) {
+      const flower = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), glow(0xc82a3a));
+      flower.position.set(x + 0.3, FLOOR_Y + 2.35, EDGE_Z + 1.9);
+      group.add(flower);
+    }
+  }
+}
+
 export function buildLocation(scene: THREE.Scene): Location {
   const group = new THREE.Group();
 
   buildSky(group);
   const updateSea = buildSea(group);
   buildBoatAndTown(group);
+  buildHorizon(group);
+  buildDecor(group);
   buildTerrace(group);
   buildVines(group);
 
@@ -477,16 +544,26 @@ export function buildLocation(scene: THREE.Scene): Location {
   group.add(palm);
 
   const sideTable = buildSideTable();
-  sideTable.position.set(-12, FLOOR_Y, -3.5);
+  sideTable.position.set(-12.5, FLOOR_Y, -5.5);
   group.add(sideTable);
 
   const updateLantern = buildLantern(group);
 
   // Свет: тёплое небо сверху, закат со стороны моря, фонарь над столом.
-  group.add(new THREE.HemisphereLight(0xffd0b8, 0x4a3a58, 1.5));
-  const sunset = new THREE.DirectionalLight(0xff8a5a, 1.1);
+  group.add(new THREE.HemisphereLight(0xffd0b8, 0x4a3a58, 1.25));
+  const sunset = new THREE.DirectionalLight(0xff8a5a, 0.7);
   sunset.position.set(0, 6, -30);
   group.add(sunset);
+
+  // Тени: всё освещаемое их принимает; отбрасывают предметы на самой террасе.
+  group.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const material = mesh.material as THREE.Material;
+    if (material.type === 'MeshBasicMaterial') return;
+    mesh.receiveShadow = true;
+    mesh.castShadow = !material.transparent;
+  });
 
   // Тёплая закатная дымка вместо серого тумана.
   scene.fog = new THREE.Fog(0xd87a5a, 60, 420);

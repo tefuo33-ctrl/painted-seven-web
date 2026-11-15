@@ -1,22 +1,27 @@
-// Персонаж за столом: low-poly фигура в костюме и чёрных очках. Всё собрано кодом.
+// Персонаж за столом: стилизованная объёмная фигура в костюме и чёрных очках. Всё собрано кодом.
 // Персонаж смотрит в сторону -z. Единица длины — ширина карты; сукно стола на y = 0.
 
 import * as THREE from 'three';
-import { FacetBuilder, flat, flatVertexColors, hex, pixelTexture, retro } from './gfx';
+import {
+  type Skin,
+  HAIR_COLORS,
+  SHIRTS,
+  SHOES_FEMALE,
+  SHOES_MALE,
+  SKIRTS,
+  SUITS_MALE,
+  TIES,
+} from '../shared/skin';
+import { FacetBuilder, PALETTE, flat, flatVertexColors, hex, pixelTexture, retro } from './gfx';
 import { FLOOR_Y } from './table';
-
-import { type Skin, SHIRTS, SUITS_MALE, TIES } from '../shared/skin';
 
 export * from '../shared/skin';
 
 const SKIN = 0xd6a47c;
 const SKIN_LIGHT = 0xe6b890;
 const SKIN_DARK = 0xb98a64;
-const HAIR = 0x35251c;
-const HAIR_LIGHT = 0x4a3528;
 const BLACK = 0x121216;
 const JACKET_BLACK = 0x1c1c22;
-const WHITE = 0xf2efe6;
 
 type Polygon = [number, number][];
 
@@ -39,17 +44,18 @@ function mirror(points: Polygon): Polygon {
 }
 
 const torsoTextures = new Map<string, THREE.CanvasTexture>();
+const TEXTURE_SCALE = 2;
 
 /**
- * Текстура туловища 64×64: слева (48 px) — перёд пиджака с лацканами, рубашкой и галстуком,
- * справа (16 px) — просто ткань для боков и спины.
+ * Текстура туловища: слева (3/4 ширины) — перёд пиджака с лацканами, рубашкой и галстуком,
+ * справа — просто ткань для боков и спины. Рисуется в координатах 64×64 и увеличивается вдвое.
  */
 function torsoTexture(skin: Skin): THREE.CanvasTexture {
   const key = JSON.stringify(skin);
   const cached = torsoTextures.get(key);
   if (cached) return cached;
-
-  const texture = pixelTexture(64, 64, (ctx) => {
+  const texture = pixelTexture(64 * TEXTURE_SCALE, 64 * TEXTURE_SCALE, (ctx) => {
+    ctx.scale(TEXTURE_SCALE, TEXTURE_SCALE);
     if (skin.gender === 'male') drawMaleTorso(ctx, skin);
     else drawFemaleTorso(ctx, skin);
   });
@@ -59,74 +65,86 @@ function torsoTexture(skin: Skin): THREE.CanvasTexture {
 
 function drawMaleTorso(ctx: CanvasRenderingContext2D, skin: Skin): void {
   const suit = SUITS_MALE[skin.suit];
-  const striped = skin.suit === 1;
   const tie = TIES[skin.tie];
+  const shirt = hex(SHIRTS[skin.shirt].color ?? 0xffffff);
   const fabric = hex(suit.fabric);
   const shade = hex(suit.shade);
   const dark = hex(suit.dark);
+  const stripe = '#56628e';
 
   ctx.fillStyle = fabric;
   ctx.fillRect(0, 0, 64, 64);
-  if (striped) {
+  if (suit.striped) {
     // Тонкая светлая вертикальная полоска.
-    ctx.fillStyle = '#56628e';
+    ctx.fillStyle = stripe;
     for (let x = 1; x < 64; x += 4) ctx.fillRect(x, 0, 1, 64);
   }
 
-  const vBottom = striped ? 36 : 29;
-  if (striped) {
+  const vBottom = suit.doubleBreasted ? 29 : 36;
+  if (suit.vest) {
     // Жилет костюма-тройки виден в вырезе пиджака.
     poly(ctx, [[15, 0], [33, 0], [24, vBottom]], dark);
-    ctx.fillStyle = '#56628e';
+    ctx.fillStyle = suit.striped ? stripe : shade;
     for (const y of [22, 27, 32]) ctx.fillRect(23, y, 2, 2);
-    poly(ctx, [[19, 0], [29, 0], [24, 19]], hex(WHITE));
+    poly(ctx, [[19, 0], [29, 0], [24, 19]], shirt);
   } else {
-    poly(ctx, [[16, 0], [32, 0], [24, vBottom]], hex(WHITE));
+    poly(ctx, [[16, 0], [32, 0], [24, vBottom]], shirt);
   }
 
-  // Галстук с небольшим узлом.
-  const tieEnd = striped ? 17 : vBottom - 3;
-  poly(ctx, [[22.5, 4], [25.5, 4], [26.5, tieEnd], [24, tieEnd + 2], [21.5, tieEnd]], hex(tie.color));
-  if (tie.pattern !== undefined) {
-    ctx.fillStyle = hex(tie.pattern);
-    for (let y = 6; y < tieEnd; y += 3) ctx.fillRect(y % 2 === 0 ? 23 : 24, y, 1, 1);
+  if (tie.none) {
+    // Без галстука: расстёгнутый ворот.
+    ctx.fillStyle = '#00000044';
+    ctx.fillRect(23.5, 4, 1, suit.vest ? 14 : vBottom - 8);
+  } else {
+    const tieEnd = suit.vest ? 17 : vBottom - 3;
+    const tieColor = hex(tie.color ?? 0);
+    poly(ctx, [[22.5, 4], [25.5, 4], [26.5, tieEnd], [24, tieEnd + 2], [21.5, tieEnd]], tieColor);
+    if (tie.pattern !== undefined) {
+      ctx.fillStyle = hex(tie.pattern);
+      for (let y = 6; y < tieEnd; y += 3) ctx.fillRect(y % 2 === 0 ? 23 : 24, y, 1, 1);
+    }
+    poly(ctx, [[22, 1], [26, 1], [25.5, 4.5], [22.5, 4.5]], tieColor, '#00000055');
   }
-  poly(ctx, [[22, 1], [26, 1], [25.5, 4.5], [22.5, 4.5]], hex(tie.color), '#00000055');
 
   // Воротник рубашки.
   const collar: Polygon = [[18, 0], [24, 2.5], [20.5, 7]];
-  poly(ctx, collar, '#ffffff', '#b8b4a8');
-  poly(ctx, mirror(collar), '#ffffff', '#b8b4a8');
+  poly(ctx, collar, shirt, '#00000040');
+  poly(ctx, mirror(collar), shirt, '#00000040');
 
   // Широкие остроконечные лацканы: пик смотрит вверх к плечу.
   const lapel: Polygon = [[17, 0], [11, 0], [12.5, 9], [7, 6.5], [10.5, 15], [24, vBottom]];
   poly(ctx, lapel, shade, dark);
   poly(ctx, mirror(lapel), shade, dark);
 
-  if (!striped) {
+  ctx.fillStyle = suit.fabric > 0x808080 ? '#5a4630' : '#0c1024';
+  if (suit.doubleBreasted) {
     // Двубортный: шесть пуговиц, два ряда по три.
-    ctx.fillStyle = '#5a4630';
     for (const y of [31, 37, 43]) {
       ctx.fillRect(18, y, 2, 2);
       ctx.fillRect(28, y, 2, 2);
     }
   } else {
-    ctx.fillStyle = '#0c1024';
     ctx.fillRect(23, 39, 2, 2);
     ctx.fillRect(23, 45, 2, 2);
   }
 
-  // Нагрудный карман с платком и клапаны карманов по бокам.
+  // Нагрудный карман и клапаны карманов по бокам.
   ctx.fillStyle = dark;
   ctx.fillRect(33, 18, 8, 1);
-  poly(ctx, [[35, 18], [37, 15], [39, 18]], striped ? '#c8cce0' : '#3a4670');
-  ctx.fillStyle = dark;
   ctx.fillRect(5, 46, 10, 1);
   ctx.fillRect(33, 46, 10, 1);
+  if (skin.accessory === 1) poly(ctx, [[34.5, 18], [37, 14.5], [39.5, 18]], '#f2efe6', '#00000030'); // платок
+  if (skin.accessory === 2) {
+    // Бутоньерка на лацкане.
+    ctx.fillStyle = '#c82a3a';
+    ctx.fillRect(35, 9, 3, 3);
+    ctx.fillStyle = '#2f6a3a';
+    ctx.fillRect(36, 12, 1, 2);
+  }
 }
 
 function drawFemaleTorso(ctx: CanvasRenderingContext2D, skin: Skin): void {
-  const shirt = hex(SHIRTS[skin.shirt].color);
+  const shirt = hex(SHIRTS[skin.shirt].color ?? 0xffffff);
   const lapelColor = '#2b2b34';
   const edge = '#0c0c10';
 
@@ -154,6 +172,13 @@ function drawFemaleTorso(ctx: CanvasRenderingContext2D, skin: Skin): void {
   ctx.fillRect(23, 37, 2, 2);
   ctx.fillRect(6, 46, 9, 1);
   ctx.fillRect(33, 46, 9, 1);
+  if (skin.accessory === 4) {
+    // Брошь на лацкане.
+    ctx.fillStyle = hex(PALETTE.gold);
+    ctx.fillRect(34, 10, 3, 3);
+    ctx.fillStyle = '#fff2c0';
+    ctx.fillRect(35, 11, 1, 1);
+  }
 }
 
 interface Section {
@@ -204,7 +229,7 @@ function loftTorso(sections: Section[]): THREE.BufferGeometry {
 
 /** Брусок от точки a до точки b (рука, нога). */
 function limb(a: THREE.Vector3, b: THREE.Vector3, width: number, depth: number, material: THREE.Material): THREE.Mesh {
-  const length = a.distanceTo(b);
+  const length = Math.max(0.01, a.distanceTo(b));
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, length, depth), material);
   mesh.position.copy(a).add(b).multiplyScalar(0.5);
   mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
@@ -244,20 +269,39 @@ function buildHead(female: boolean): THREE.Mesh {
   return new THREE.Mesh(builder.build(), flatVertexColors());
 }
 
+type Corners = Record<'fbl' | 'fbr' | 'ftl' | 'ftr' | 'btl' | 'btr' | 'bbl' | 'bbr', [number, number, number]>;
+
 /** Волосы — деформированная коробка: восемь углов, шесть граней. */
-function hairBlock(corners: Record<'fbl' | 'fbr' | 'ftl' | 'ftr' | 'btl' | 'btr' | 'bbl' | 'bbr', [number, number, number]>): THREE.Mesh {
-  const v = (key: keyof typeof corners) => new THREE.Vector3(...corners[key]);
+function hairBlock(corners: Corners, color: number, light: number): THREE.Mesh {
+  const v = (key: keyof Corners) => new THREE.Vector3(...corners[key]);
   const builder = new FacetBuilder();
-  builder.quad(v('ftl'), v('btl'), v('btr'), v('ftr'), HAIR_LIGHT); // верх
-  builder.quad(v('fbr'), v('fbl'), v('ftl'), v('ftr'), HAIR); // перёд (смотрит в -z)
-  builder.quad(v('bbl'), v('bbr'), v('btr'), v('btl'), HAIR); // затылок
-  builder.quad(v('fbl'), v('bbl'), v('btl'), v('ftl'), HAIR); // -x
-  builder.quad(v('bbr'), v('fbr'), v('ftr'), v('btr'), HAIR_LIGHT); // +x
+  builder.quad(v('ftl'), v('btl'), v('btr'), v('ftr'), light); // верх
+  builder.quad(v('fbr'), v('fbl'), v('ftl'), v('ftr'), color); // перёд (смотрит в -z)
+  builder.quad(v('bbl'), v('bbr'), v('btr'), v('btl'), color); // затылок
+  builder.quad(v('fbl'), v('bbl'), v('btl'), v('ftl'), color); // -x
+  builder.quad(v('bbr'), v('fbr'), v('ftr'), v('btr'), light); // +x
+  builder.quad(v('fbl'), v('fbr'), v('bbr'), v('bbl'), color); // низ
   return new THREE.Mesh(builder.build(), flatVertexColors(true));
+}
+
+/** Шапка волос по форме головы: высота макушки и насколько низко волосы спускаются сзади. */
+function hairCap(top: number, back: number, color: number, light: number, frontLift = 0): THREE.Mesh {
+  return hairBlock(
+    {
+      fbl: [-0.63, 1.24, -0.6], fbr: [0.63, 1.24, -0.6],
+      ftl: [-0.53, top + frontLift, -0.5], ftr: [0.53, top + frontLift, -0.5],
+      btl: [-0.58, top - 0.1, 0.6], btr: [0.58, top - 0.1, 0.6],
+      bbl: [-0.68, back, 0.71], bbr: [0.68, back, 0.71],
+    },
+    color,
+    light,
+  );
 }
 
 export class Character {
   readonly group = new THREE.Group();
+  /** Точка у кистей: отсюда расходится веер карт. */
+  readonly handAnchor = new THREE.Object3D();
   private skin: Skin;
   private seated: boolean;
   private body = new THREE.Group();
@@ -288,8 +332,7 @@ export class Character {
     const female = skin.gender === 'female';
     const suit = SUITS_MALE[skin.suit];
     const sleeve = flat(female ? JACKET_BLACK : suit.fabric);
-    const trousers = flat(female ? JACKET_BLACK : suit.fabric);
-    const shirtColor = female ? SHIRTS[skin.shirt].color : WHITE;
+    const shirtColor = SHIRTS[skin.shirt].color ?? 0xffffff;
     const skinMaterial = flat(SKIN);
 
     // Туловище. У мужчины широкие подложенные плечи, у женщины пиджак заужен в талии.
@@ -308,11 +351,12 @@ export class Character {
           { y: 1.45, w: 2.5, d: 1.15 },
           { y: shoulderY, w: 3.0, d: 1.0 },
         ];
-    const torso = new THREE.Mesh(
-      loftTorso(sections),
-      retro(new THREE.MeshLambertMaterial({ map: torsoTexture(skin), flatShading: true })),
+    this.body.add(
+      new THREE.Mesh(
+        loftTorso(sections),
+        retro(new THREE.MeshLambertMaterial({ map: torsoTexture(skin), flatShading: true })),
+      ),
     );
-    this.body.add(torso);
 
     // Шея и голова.
     const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.5, 6), flat(SKIN_DARK));
@@ -325,18 +369,19 @@ export class Character {
     this.head.add(skull);
     this.buildFace(female);
     this.buildHair(female);
+    this.buildAccessories(female, shoulderY);
 
-    // Руки: плечо → локоть → кисть у края стола (или вдоль тела, если персонаж стоит).
+    // Руки: плечо → локоть → кисть. Сидя — кисти сведены перед собой и держат карты.
     const shoulderX = sections[3].w / 2 - 0.22;
     const armWidth = female ? 0.5 : 0.62;
     for (const side of [1, -1]) {
       const holder = side === 1 ? this.rightArm : new THREE.Group();
       const shoulder = new THREE.Vector3(side * shoulderX, shoulderY - 0.25, 0);
       const elbow = seated
-        ? new THREE.Vector3(side * (shoulderX + 0.2), 0.75, -0.75)
+        ? new THREE.Vector3(side * (shoulderX + 0.22), 0.72, -0.7)
         : new THREE.Vector3(side * (shoulderX + 0.12), 0.55, 0.05);
       const wrist = seated
-        ? new THREE.Vector3(side * 0.55, 0.62, -1.75)
+        ? new THREE.Vector3(side * 0.34, 0.6, -1.8)
         : new THREE.Vector3(side * (shoulderX + 0.1), -0.9, -0.2);
       holder.position.copy(shoulder);
       const local = (p: THREE.Vector3) => p.clone().sub(shoulder);
@@ -348,29 +393,70 @@ export class Character {
       holder.add(limb(local(wrist), local(cuffEnd), armWidth * 0.7, armWidth * 0.7, flat(shirtColor)));
       const handEnd = cuffEnd.clone().addScaledVector(direction, 0.38);
       holder.add(limb(local(cuffEnd), local(handEnd), armWidth * 0.62, armWidth * 0.5, skinMaterial));
+      if (!female && skin.accessory === 4 && side === -1) {
+        // Часы на левом запястье.
+        const watch = limb(local(wrist.clone().addScaledVector(direction, -0.12)), local(wrist), armWidth * 0.95, armWidth * 0.95, flat(PALETTE.gold));
+        holder.add(watch);
+      }
       this.body.add(holder);
     }
+    this.handAnchor.position.set(0, 0.58, -2.3);
+    this.body.add(this.handAnchor);
 
-    // Ноги: сидя — бёдра вперёд, голени вниз; стоя — прямые.
+    this.buildLegs(female, hipY, suit.fabric);
+
+    // Тени от всех частей персонажа.
+    this.body.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh) object.castShadow = true;
+    });
+  }
+
+  private buildLegs(female: boolean, hipY: number, suitFabric: number): void {
+    const { skin, seated } = this;
+    const skirt = SKIRTS[skin.skirt];
+    const trousers = !female || skirt.trousers === true;
+    const legMaterial = flat(!female ? suitFabric : trousers ? JACKET_BLACK : 0x2a2024); // иначе тёмные колготки
+    const shoeColor = (female ? SHOES_FEMALE[skin.shoes] : SHOES_MALE[skin.shoes]).color ?? BLACK;
+    const heel = female ? SHOES_FEMALE[skin.shoes].heel : 0;
     const legLength = hipY - (FLOOR_Y + 0.2);
+    const thick = female ? 0.6 : 0.85;
+
     for (const side of [1, -1]) {
       const legX = side * (female ? 0.38 : 0.48);
       const hip = new THREE.Vector3(legX, hipY, 0);
       const knee = seated ? new THREE.Vector3(legX, hipY, -1.7) : new THREE.Vector3(legX, hipY - legLength / 2, 0);
       const ankle = seated ? new THREE.Vector3(legX, FLOOR_Y + 0.2, -1.7) : new THREE.Vector3(legX, FLOOR_Y + 0.2, 0);
-      const legMaterial = female ? flat(0x2a2024) : trousers; // у женщины тёмные колготки
-      const thick = female ? 0.6 : 0.85;
-      this.body.add(limb(hip, knee, thick, thick, female && seated ? flat(JACKET_BLACK) : legMaterial));
+      this.body.add(limb(hip, knee, thick, thick, legMaterial));
       this.body.add(limb(knee, ankle, thick * 0.88, thick * 0.88, legMaterial));
-      const shoe = new THREE.Mesh(new THREE.BoxGeometry(thick * 0.9, 0.25, 1.1), flat(BLACK));
-      shoe.position.set(ankle.x, FLOOR_Y + 0.12, ankle.z - 0.25);
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(thick * 0.9, 0.25, 1.1), flat(shoeColor));
+      shoe.position.set(ankle.x, FLOOR_Y + 0.12 + heel * 0.3, ankle.z - 0.25);
       this.body.add(shoe);
+      if (heel > 0) {
+        const heelMesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, heel, 0.16), flat(shoeColor));
+        heelMesh.position.set(ankle.x, FLOOR_Y + heel / 2, ankle.z + 0.2);
+        this.body.add(heelMesh);
+      }
     }
-    if (female) {
-      // Чёрная юбка.
-      const skirt = new THREE.Mesh(new THREE.BoxGeometry(1.75, seated ? 0.8 : 1.5, seated ? 1.9 : 1.1), flat(JACKET_BLACK));
-      skirt.position.set(0, seated ? hipY : hipY - 0.75, seated ? -0.75 : 0);
-      this.body.add(skirt);
+
+    if (female && !trousers) {
+      // Юбка: стоя — от бёдер вниз на свою длину; сидя — лежит на бёдрах и свисает с коленей.
+      const material = flat(JACKET_BLACK);
+      if (seated) {
+        const along = Math.min(1.95, 0.7 + skirt.length * 0.6);
+        const top = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.82, along), material);
+        top.position.set(0, hipY, -along / 2 + 0.2);
+        this.body.add(top);
+        if (skirt.length > 2) {
+          const drop = new THREE.Mesh(new THREE.BoxGeometry(1.7, skirt.length - 1.5, 0.75), material);
+          drop.position.set(0, hipY - (skirt.length - 1.5) / 2 - 0.2, -1.7);
+          this.body.add(drop);
+        }
+      } else {
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.82, skirt.length > 2 ? 1.0 : 0.72, skirt.length, 8), material);
+        mesh.scale.z = 0.72;
+        mesh.position.set(0, hipY - skirt.length / 2 + 0.1, 0);
+        this.body.add(mesh);
+      }
     }
   }
 
@@ -401,56 +487,125 @@ export class Character {
     const mouth = new THREE.Mesh(new THREE.BoxGeometry(female ? 0.22 : 0.26, 0.05, 0.04), flat(female ? 0xa02a3a : 0x8a4a40));
     mouth.position.set(0, 0.42, -0.5);
     this.head.add(mouth);
-
-    if (female) {
-      for (const side of [1, -1]) {
-        const earring = new THREE.Mesh(new THREE.OctahedronGeometry(0.07, 0), flat(0xd9b44a));
-        earring.position.set(side * 0.63, 0.62, 0);
-        this.head.add(earring);
-      }
+    // Уши.
+    for (const side of [1, -1]) {
+      const ear = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.26, 0.16), flat(SKIN_DARK));
+      ear.position.set(side * 0.62, 0.92, 0.02);
+      this.head.add(ear);
     }
   }
 
   private buildHair(female: boolean): void {
+    const { color = 0x35251c, light } = HAIR_COLORS[this.skin.hairColor];
+    const style = this.skin.hair;
+    // Под шляпой волосы прижаты, чтобы не торчали сквозь неё.
+    const hat = this.skin.accessory === 3;
+
     if (!female) {
-      // Зачёсаны назад, с объёмом сверху.
-      this.head.add(
-        hairBlock({
-          fbl: [-0.62, 1.22, -0.6], fbr: [0.62, 1.22, -0.6],
-          ftl: [-0.52, 1.98, -0.5], ftr: [0.52, 1.98, -0.5],
-          btl: [-0.56, 1.86, 0.6], btr: [0.56, 1.86, 0.6],
-          bbl: [-0.66, 0.42, 0.7], bbr: [0.66, 0.42, 0.7],
-        }),
-      );
+      if (style === 3) return; // лысый
+      if (style === 1 || hat) {
+        this.head.add(hairCap(1.78, 0.7, color, light)); // коротко
+      } else if (style === 2) {
+        // Волнистые: выше и пышнее, с чёлкой.
+        this.head.add(hairCap(2.06, 0.4, color, light, 0.06));
+        const fringe = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.3), flat(light));
+        fringe.position.set(0.12, 1.42, -0.62);
+        fringe.rotation.z = -0.25;
+        this.head.add(fringe);
+      } else {
+        this.head.add(hairCap(1.98, 0.42, color, light)); // зачёсаны назад с объёмом
+      }
       return;
     }
-    this.head.add(
-      hairBlock({
-        fbl: [-0.64, 1.25, -0.58], fbr: [0.64, 1.25, -0.58],
-        ftl: [-0.54, 1.84, -0.45], ftr: [0.54, 1.84, -0.45],
-        btl: [-0.6, 1.8, 0.6], btr: [0.6, 1.8, 0.6],
-        bbl: [-0.7, 0.3, 0.72], bbr: [0.7, 0.3, 0.72],
-      }),
-    );
-    if (this.skin.hair === 1) {
-      const bun = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), flat(HAIR));
+
+    this.head.add(hairCap(hat ? 1.76 : 1.84, 0.3, color, light));
+    if (style === 1) {
+      const bun = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), flat(color));
       bun.position.set(0, 1.25, 0.92);
       this.head.add(bun);
-      return;
+    } else if (style === 2) {
+      // Каре: до подбородка, ровный срез.
+      this.head.add(
+        hairBlock(
+          {
+            fbl: [-0.76, 0.12, -0.15], fbr: [0.76, 0.12, -0.15],
+            ftl: [-0.7, 1.3, -0.2], ftr: [0.7, 1.3, -0.2],
+            btl: [-0.68, 1.3, 0.76], btr: [0.68, 1.3, 0.76],
+            bbl: [-0.78, 0.12, 0.8], bbr: [0.78, 0.12, 0.8],
+          },
+          color,
+          light,
+        ),
+      );
+    } else if (style === 3) {
+      // Хвост: собран сзади и спускается на спину.
+      const knot = new THREE.Mesh(new THREE.IcosahedronGeometry(0.26, 0), flat(color));
+      knot.position.set(0, 1.4, 0.82);
+      this.head.add(knot);
+      this.head.add(
+        hairBlock(
+          {
+            fbl: [-0.16, -0.9, 0.86], fbr: [0.16, -0.9, 0.86],
+            ftl: [-0.26, 1.4, 0.74], ftr: [0.26, 1.4, 0.74],
+            btl: [-0.26, 1.4, 1.06], btr: [0.26, 1.4, 1.06],
+            bbl: [-0.12, -0.9, 1.08], bbr: [0.12, -0.9, 1.08],
+          },
+          color,
+          light,
+        ),
+      );
+    } else {
+      // Длинные волосы ниже плеч: полотно сзади и пряди по бокам.
+      this.head.add(
+        hairBlock(
+          {
+            fbl: [-0.72, -1.6, 0.35], fbr: [0.72, -1.6, 0.35],
+            ftl: [-0.68, 0.9, 0.3], ftr: [0.68, 0.9, 0.3],
+            btl: [-0.66, 0.9, 0.78], btr: [0.66, 0.9, 0.78],
+            bbl: [-0.8, -1.6, 0.8], bbr: [0.8, -1.6, 0.8],
+          },
+          color,
+          light,
+        ),
+      );
+      for (const side of [1, -1]) {
+        const strand = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.9, 0.5), flat(side === 1 ? light : color));
+        strand.position.set(side * 0.72, 0.1, 0.1);
+        this.head.add(strand);
+      }
     }
-    // Длинные волосы ниже плеч: полотно сзади и пряди по бокам.
-    this.head.add(
-      hairBlock({
-        fbl: [-0.72, -1.6, 0.35], fbr: [0.72, -1.6, 0.35],
-        ftl: [-0.68, 0.9, 0.3], ftr: [0.68, 0.9, 0.3],
-        btl: [-0.66, 0.9, 0.78], btr: [0.66, 0.9, 0.78],
-        bbl: [-0.8, -1.6, 0.8], bbr: [0.8, -1.6, 0.8],
-      }),
-    );
-    for (const side of [1, -1]) {
-      const strand = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.9, 0.5), flat(side === 1 ? HAIR_LIGHT : HAIR));
-      strand.position.set(side * 0.72, 0.1, 0.1);
-      this.head.add(strand);
+  }
+
+  private buildAccessories(female: boolean, shoulderY: number): void {
+    const accessory = this.skin.accessory;
+    const gold = flat(PALETTE.gold);
+    if (accessory === 3) {
+      // Шляпа: у мужчины федора, у женщины — с широкими полями.
+      const felt = flat(female ? 0x1c1c22 : 0x4a3a30);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(female ? 1.3 : 0.98, female ? 1.3 : 0.98, 0.07, 10), felt);
+      brim.position.y = 1.74;
+      this.head.add(brim);
+      const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.66, 0.56, 8), felt);
+      crown.position.y = 2.04;
+      this.head.add(crown);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.67, 0.67, 0.14, 8), flat(female ? 0x8a1c2b : 0x1a1a22));
+      band.position.y = 1.84;
+      this.head.add(band);
+    }
+    if (female && accessory === 1) {
+      for (const side of [1, -1]) {
+        const earring = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), gold);
+        earring.position.set(side * 0.64, 0.68, 0.02);
+        this.head.add(earring);
+      }
+    }
+    if (female && accessory === 2) {
+      // Жемчужное ожерелье.
+      for (let i = -3; i <= 3; i++) {
+        const pearl = new THREE.Mesh(new THREE.OctahedronGeometry(0.075, 0), flat(0xf4efe2));
+        pearl.position.set(i * 0.13, shoulderY - 0.02 - (9 - i * i) * 0.022, -0.47 - (9 - i * i) * 0.006);
+        this.body.add(pearl);
+      }
     }
   }
 

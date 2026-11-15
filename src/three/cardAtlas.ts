@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { type Card, type Rank, type Suit, RANKS, SUITS, isJoker } from '../engine';
 import { PALETTE, hex, pixelTexture } from './gfx';
 
+/** Во сколько раз текстура крупнее координат рисования (чем больше — тем чётче карты). */
+const ATLAS_SCALE = 2;
+
 export const CELL_W = 64;
 export const CELL_H = 96;
 const COLS = 10;
@@ -258,10 +261,11 @@ let atlas: THREE.CanvasTexture | null = null;
 /** Текстура со всеми картами (создаётся один раз). */
 export function getCardAtlas(): THREE.CanvasTexture {
   if (atlas) return atlas;
-  const texture = pixelTexture(CELL_W * COLS, CELL_H * ROWS, (ctx) => {
+  const texture = pixelTexture(CELL_W * COLS * ATLAS_SCALE, CELL_H * ROWS * ATLAS_SCALE, (ctx) => {
     const cell = (index: number, draw: () => void) => {
       ctx.save();
-      ctx.translate((index % COLS) * CELL_W, Math.floor(index / COLS) * CELL_H);
+      ctx.translate((index % COLS) * CELL_W * ATLAS_SCALE, Math.floor(index / COLS) * CELL_H * ATLAS_SCALE);
+      ctx.scale(ATLAS_SCALE, ATLAS_SCALE);
       ctx.beginPath();
       ctx.rect(0, 0, CELL_W, CELL_H);
       ctx.clip();

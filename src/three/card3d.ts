@@ -25,7 +25,7 @@ export interface MoveOptions {
   arc?: number;
 }
 
-type Look = 'normal' | 'dim' | 'lit';
+type Look = 'normal' | 'dim' | 'lit' | 'chosen';
 
 let materials: Record<Look, THREE.MeshLambertMaterial> | null = null;
 
@@ -40,6 +40,10 @@ function getMaterials(): Record<Look, THREE.MeshLambertMaterial> {
       // Подсвеченная карта: ею можно ходить.
       lit: retro(
         new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x3a2c12, emissiveMap: map, color: 0xc8c4bc }),
+      ),
+      // Выбранная карта: светится ярче остальных.
+      chosen: retro(
+        new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x7a5c20, emissiveMap: map, color: 0xd8d4cc }),
       ),
     };
   }
@@ -93,6 +97,7 @@ export class Card3D {
     setFaceUv(this.uv, 5, CELL_BACK);
     this.mesh = new THREE.Mesh(geometry, getMaterials().normal);
     this.mesh.userData.card3d = this;
+    this.mesh.castShadow = true;
   }
 
   /** Показать на лице карту (или рубашку, если карта неизвестна). */

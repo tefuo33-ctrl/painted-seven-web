@@ -8,8 +8,8 @@ export const gfx = {
   /** Качество: на «низком» выключены блум, виньетка и дрожание вершин, рендер мельче. */
   quality: 'high' as 'high' | 'low',
   sound: true,
-  /** Во сколько раз рендер меньше окна (3 = треть размера, крупные пиксели). */
-  pixelScale: 3,
+  /** Во сколько раз рендер меньше окна (2 — лёгкая пиксельность, 3 — крупные пиксели). */
+  pixelScale: 2,
   /** Сила дрожания вершин: 0 — выключено, 1 — как на PS1, больше — грубее. */
   snapStrength: 1,
   bloom: true,
@@ -18,7 +18,7 @@ export const gfx = {
   vignette: 0.5,
 };
 
-const GFX_KEY = 'painted-seven-gfx-v1';
+const GFX_KEY = 'painted-seven-gfx-v2';
 
 /** Загрузить сохранённые настройки картинки и звука. */
 export function loadGfx(): void {

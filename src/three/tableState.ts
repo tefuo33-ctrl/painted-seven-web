@@ -21,6 +21,7 @@ export function tableStateFromGame(game: GameState, me: number): TableState {
     trumpCard: game.trumpCard,
     trump: game.trump,
     playable: myTurn ? legalCardsFor(game, me) : [],
+    taken: Array.from({ length: PLAYER_COUNT }, (_, seat) => game.taken[playerAt(seat)] ?? 0),
   };
 }
 
