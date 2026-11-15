@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { gfx, updateSnap } from './gfx';
 import { buildLocation } from './location';
 import { type Obstacle, type OrbitView, OrbitCamera } from './orbit';
-import { SEATS, buildChairs, buildChipStacks, buildTable } from './table';
+import { SEATS, buildChairs, buildTable } from './table';
 
 /** Виньетка: края кадра слегка темнеют. */
 const VignetteShader = {
@@ -83,7 +83,6 @@ export function createStage(container: HTMLElement): Stage {
   scene.add(table);
   const chairs = buildChairs();
   scene.add(chairs.group);
-  scene.add(buildChipStacks());
 
   // Главный свет с тенями: сверху и чуть со стороны заката.
   const key = new THREE.DirectionalLight(0xffc890, 1.25);

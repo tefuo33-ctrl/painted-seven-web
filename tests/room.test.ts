@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Room } from '../server/room';
-import { type GameState, cardLabel, createGame, dealCards } from '../src/engine';
+import { type GameState, allowedBids, cardLabel, createGame, dealCards, legalCardsFor } from '../src/engine';
 import { type ServerMessage, makeRoomCode, viewFor } from '../src/net/protocol';
 import { FEMALE_NAMES, MALE_NAMES, pickBotNames } from '../src/shared/names';
 import { DEFAULT_SKIN, sanitizeSkin } from '../src/shared/skin';
@@ -102,6 +102,104 @@ describe('Комната', () => {
     for (let i = 0; i < 2000 && room.game!.phase !== 'gameOver'; i++) vi.advanceTimersByTime(31000);
     expect(room.game!.phase).toBe('gameOver');
     expect(room.game!.sheet).toHaveLength(7);
+    room.dispose();
+  });
+});
+
+describe('Готовность, таймер и сложность ботов', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** Комната из двух людей и двух ботов, доведённая до конца первого раунда. */
+  function roomAtRoundEnd() {
+    const room = new Room('ABCDE', 'a', { gameLength: 'short', turnSeconds: 0 });
+    const a = fakeConnection();
+    const b = fakeConnection();
+    room.join('a', 'a', DEFAULT_SKIN, a);
+    room.join('b', 'b', DEFAULT_SKIN, b);
+    room.start('a');
+    const game = room.game!;
+    for (let i = 0; i < 400 && game.phase !== 'roundEnd'; i++) {
+      vi.advanceTimersByTime(3000);
+      const id = ['a', 'b'][game.turn];
+      if (id && game.phase === 'bidding') room.bid(id, allowedBids(game, game.turn)[0]);
+      else if (id && game.phase === 'playing') room.play(id, legalCardsFor(game, game.turn)[0], { mode: 'high' });
+    }
+    expect(game.phase).toBe('roundEnd');
+    return { room, a, b, game };
+  }
+
+  it('следующий раунд не начинается, пока не готовы все люди', () => {
+    const { room, game, b } = roomAtRoundEnd();
+    vi.advanceTimersByTime(120000);
+    expect(game.roundIndex).toBe(0); // никто не подтвердил — ждём
+    room.ready('a');
+    vi.advanceTimersByTime(60000);
+    expect(game.roundIndex).toBe(0); // один готов, второй нет
+    const seen = b.messages.filter((m) => m.t === 'room').pop();
+    expect(seen && seen.t === 'room' && seen.seats.map((s) => s?.ready)).toEqual([false, true, true, true]);
+    room.ready('b');
+    vi.advanceTimersByTime(3000);
+    expect(game.roundIndex).toBe(1);
+    room.dispose();
+  });
+
+  it('отключившийся игрок не задерживает следующий раунд', () => {
+    const { room, game } = roomAtRoundEnd();
+    room.ready('a');
+    room.leave('b');
+    vi.advanceTimersByTime(3000);
+    expect(game.roundIndex).toBe(1);
+    room.dispose();
+  });
+
+  it('таймер хода: штраф каждые 30 секунд, после 90 секунд за игрока ходит бот', () => {
+    const room = new Room('ABCDE', 'a', { gameLength: 'short' });
+    for (const id of ['a', 'b', 'c', 'd']) room.join(id, id, DEFAULT_SKIN, fakeConnection());
+    room.start('a');
+    const game = room.game!;
+    vi.advanceTimersByTime(4000); // раздача и её анимация
+    expect(game.phase).toBe('bidding');
+    const idle = game.turn;
+    vi.advanceTimersByTime(31000);
+    expect(game.penalties[idle]).toBe(-10);
+    expect(game.turn).toBe(idle);
+    vi.advanceTimersByTime(30000);
+    expect(game.penalties[idle]).toBe(-20);
+    vi.advanceTimersByTime(32000);
+    expect(game.penalties[idle]).toBe(-30);
+    expect(game.autoPlay[idle]).toBe(true);
+    expect(game.bids[idle]).not.toBeNull(); // бот сделал заказ за выбывшего
+    room.dispose();
+  });
+
+  it('переподключение не сбрасывает таймер хода', () => {
+    const room = new Room('ABCDE', 'a', { gameLength: 'short' });
+    for (const id of ['a', 'b', 'c', 'd']) room.join(id, id, DEFAULT_SKIN, fakeConnection());
+    room.start('a');
+    const game = room.game!;
+    vi.advanceTimersByTime(4000);
+    const id = ['a', 'b', 'c', 'd'][game.turn];
+    const startedAt = game.turnStartedAt;
+    vi.advanceTimersByTime(20000);
+    room.join(id, id, DEFAULT_SKIN, fakeConnection()); // обновил страницу и вернулся
+    expect(game.turnStartedAt).toBe(startedAt);
+    vi.advanceTimersByTime(11000);
+    expect(game.penalties[game.turn]).toBe(-10);
+    room.dispose();
+  });
+
+  it('сложность ботов выбирает создатель комнаты до начала игры', () => {
+    const room = new Room('ABCDE', 'a', {});
+    const guest = fakeConnection();
+    room.join('a', 'a', DEFAULT_SKIN, fakeConnection());
+    room.join('b', 'b', DEFAULT_SKIN, guest);
+    expect(() => room.configure('b', 'expert')).toThrow();
+    room.configure('a', 'expert');
+    const message = guest.messages.filter((m) => m.t === 'room').pop();
+    expect(message && message.t === 'room' && [message.botLevel, message.bots]).toEqual(['expert', 2]);
+    room.start('a');
+    expect(room.game!.settings.botLevel).toBe('expert');
     room.dispose();
   });
 });

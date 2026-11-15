@@ -1,7 +1,7 @@
 // Общие для браузера и сервера типы сообщений и «вид игрока» — состояние партии,
 // в котором чужие карты скрыты. Правила исполняет сервер; браузер получает только свой вид.
 
-import type { Card, GameState, JokerChoice, RuleSettings } from '../engine';
+import type { BotLevel, Card, GameState, JokerChoice, RuleSettings } from '../engine';
 import type { Skin } from '../shared/skin';
 
 export const PLAYER_COUNT = 4;
@@ -13,6 +13,8 @@ export interface SeatInfo {
   bot: boolean;
   /** Человек на связи (для бота всегда true). */
   connected: boolean;
+  /** Подтвердил готовность к следующему раунду (боты готовы всегда). */
+  ready: boolean;
 }
 
 /** Сообщения от браузера серверу. */
@@ -20,9 +22,12 @@ export type ClientMessage =
   | { t: 'create'; clientId: string; name: string; skin: Skin; settings: Partial<RuleSettings> }
   | { t: 'join'; clientId: string; code: string; name: string; skin: Skin }
   | { t: 'start' }
+  /** Создатель комнаты меняет сложность ботов до начала игры. */
+  | { t: 'config'; botLevel: BotLevel }
+  /** Игрок готов к следующему раунду. */
+  | { t: 'ready' }
   | { t: 'bid'; bid: number }
   | { t: 'play'; card: Card; joker?: JokerChoice }
-  | { t: 'next' }
   | { t: 'leave' };
 
 /** Сообщения от сервера браузеру. */
@@ -35,8 +40,12 @@ export type ServerMessage =
       /** Создатель комнаты — получатель? Только он может начать игру. */
       host: boolean;
       started: boolean;
+      /** Сложность ботов и сколько ботов займёт свободные места. */
+      botLevel: BotLevel;
+      bots: number;
     }
-  | { t: 'state'; game: GameState }
+  /** `now` — время сервера: по нему браузер показывает общий для всех таймер хода. */
+  | { t: 'state'; game: GameState; now: number }
   | { t: 'error'; message: string };
 
 /** Заглушка вместо чужой карты: игроку виден только размер чужой руки. */
@@ -63,6 +72,9 @@ export function viewFor(game: GameState, me: number): GameState {
     hands: rotate(game.hands, me).map((hand, seat) => (seat === 0 ? hand.slice() : hand.map(() => HIDDEN_CARD))),
     bids: rotate(game.bids, me),
     taken: rotate(game.taken, me),
+    passStreak: rotate(game.passStreak, me),
+    penalties: rotate(game.penalties, me),
+    autoPlay: rotate(game.autoPlay, me),
     trick: game.trick.map((play) => ({ ...play, player: seatOf(play.player) })),
     trickWinner: game.trickWinner === null ? null : seatOf(game.trickWinner),
     sheet: game.sheet.map((row) => ({

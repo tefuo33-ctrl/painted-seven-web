@@ -72,32 +72,57 @@ function buildSky(group: THREE.Group): void {
 }
 
 function buildSea(group: THREE.Group): void {
-  // Море — неподвижная картина: тёмная вода, мелкая рябь и дорожка света от солнца.
-  const texture = paintedTexture(512, 1024, (ctx, w, h) => {
+  // Море — неподвижная картина: глубокий синий цвет, редкая рябь и ровная дорожка света от солнца.
+  const texture = paintedTexture(1024, 1024, (ctx, w, h) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, h);
-    gradient.addColorStop(0, '#3a3f86'); // у горизонта светлее
-    gradient.addColorStop(0.25, '#232c70');
-    gradient.addColorStop(1, '#141c4c');
+    gradient.addColorStop(0, '#4a4a92'); // у горизонта светлее и теплее
+    gradient.addColorStop(0.12, '#2f3a86');
+    gradient.addColorStop(0.5, '#1f2a6a');
+    gradient.addColorStop(1, '#151d4e');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, w, h);
-    const random = seededRandom(3);
-    // Рябь: короткие горизонтальные штрихи, крупнее к берегу.
-    for (let i = 0; i < 5200; i++) {
-      const t = Math.pow(random(), 1.7);
-      const y = t * h;
-      const length = 2 + t * 22;
-      ctx.fillStyle = random() > 0.5 ? 'rgba(120,130,210,0.16)' : 'rgba(8,10,40,0.2)';
-      ctx.fillRect(random() * w, y, length, 1 + t * 1.5);
+
+    // Мягкое тёплое свечение под солнцем.
+    const glowWidth = (t: number) => 14 + t * 150;
+    for (let y = 0; y < h; y++) {
+      const t = y / h;
+      const half = glowWidth(t);
+      const strip = ctx.createLinearGradient(w / 2 - half, 0, w / 2 + half, 0);
+      const strength = 0.34 * (1 - t * 0.75);
+      strip.addColorStop(0, 'rgba(255,170,90,0)');
+      strip.addColorStop(0.5, `rgba(255,190,110,${strength})`);
+      strip.addColorStop(1, 'rgba(255,170,90,0)');
+      ctx.fillStyle = strip;
+      ctx.fillRect(w / 2 - half, y, half * 2, 1);
     }
-    // Дорожка света: золотые блики, узкая у горизонта и широкая у берега.
-    for (let i = 0; i < 2600; i++) {
-      const t = Math.pow(random(), 1.3);
-      const y = t * h;
-      const spread = 5 + t * 62;
-      const x = w / 2 + (random() + random() - 1) * spread;
-      const length = 2 + t * 16;
-      ctx.fillStyle = random() > 0.4 ? `rgba(255,214,130,${0.85 - t * 0.35})` : `rgba(255,150,80,${0.7 - t * 0.3})`;
-      ctx.fillRect(x - length / 2, y, length, 1 + t * 1.6);
+
+    // Рябь: длинные тонкие горизонтальные линии, реже и крупнее к берегу.
+    const random = seededRandom(3);
+    let y = 6;
+    while (y < h) {
+      const t = y / h;
+      const count = Math.round(26 - t * 14);
+      for (let i = 0; i < count; i++) {
+        const length = 10 + t * 70 + random() * 30;
+        ctx.fillStyle = random() > 0.5 ? 'rgba(150,160,230,0.10)' : 'rgba(6,8,36,0.14)';
+        ctx.fillRect(random() * w, y, length, 1 + t * 1.6);
+      }
+      y += 2 + t * 9;
+    }
+
+    // Блики дорожки: ровные золотые штрихи по центру, плотнее у горизонта.
+    y = 2;
+    while (y < h) {
+      const t = y / h;
+      const half = glowWidth(t) * 0.62;
+      const lines = Math.round(5 - t * 2);
+      for (let i = 0; i < lines; i++) {
+        const offset = (random() + random() - 1) * half;
+        const length = (6 + t * 44) * (0.6 + random() * 0.8) * (1 - Math.abs(offset) / half * 0.5);
+        ctx.fillStyle = `rgba(255,${205 + Math.floor(random() * 30)},${130 + Math.floor(random() * 40)},${0.9 - t * 0.45})`;
+        ctx.fillRect(w / 2 + offset - length / 2, y, length, 1 + t * 2.2);
+      }
+      y += 2 + t * 10;
     }
   });
   const depth = -SKY_Z + 10;
@@ -149,76 +174,147 @@ function buildBoatAndTown(group: THREE.Group): void {
   boat.position.set(38, SEA_Y + 0.5, -160);
   group.add(boat);
 
-  // Холмы побережья: тёмная зелень с лиловой дымкой.
+  // Холм с городком справа: тёмная зелень склона, виллы уступами, кипарисы, церковь наверху.
   const random = seededRandom(21);
   const hills: [number, number, number, number, number, number][] = [
     // x, z, ширина, высота, глубина, цвет
-    [150, -200, 90, 44, 50, 0x3a3558],
-    [205, -170, 100, 58, 60, 0x33304f],
-    [100, -222, 60, 22, 34, 0x46406a],
-    [270, -205, 120, 74, 70, 0x2c2946],
+    [150, -150, 80, 62, 46, 0x2a3a3c],
+    [215, -150, 90, 84, 56, 0x243236],
+    [95, -172, 46, 26, 30, 0x34464a],
+    [290, -200, 130, 96, 70, 0x2c2946],
   ];
   for (const [x, z, width, height, depth, color] of hills) {
-    const hill = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color }));
+    const hill = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color }));
     hill.scale.set(width, height, depth);
     hill.position.set(x, SEA_Y - 1, z);
     group.add(hill);
   }
 
-  // Домики: светлые стены, черепичные крыши, горящие окна.
-  const wallColors = ['#e6c9a0', '#d8a882', '#f0d8b4', '#c98e70'];
+  // Стены вилл: тёплая штукатурка, ряды окон (часть горит), арки внизу.
+  const wallColors = ['#ecd2aa', '#dcae88', '#f3dfbe', '#cf9676', '#e6c098'];
   const wallTextures = wallColors.map((wall, index) =>
-    paintedTexture(128, 128, (ctx, w, h) => {
+    paintedTexture(256, 256, (ctx, w, h) => {
       ctx.fillStyle = wall;
       ctx.fillRect(0, 0, w, h);
       const shade = ctx.createLinearGradient(0, 0, 0, h);
-      shade.addColorStop(0, 'rgba(255,220,170,0.25)');
-      shade.addColorStop(1, 'rgba(60,30,60,0.35)');
+      shade.addColorStop(0, 'rgba(255,214,160,0.3)');
+      shade.addColorStop(1, 'rgba(70,40,80,0.4)');
       ctx.fillStyle = shade;
       ctx.fillRect(0, 0, w, h);
       const windowRandom = seededRandom(index + 5);
-      for (let y = 18; y < h - 24; y += 34) {
-        for (let x = 14; x < w - 20; x += 30) {
-          const lit = windowRandom() > 0.28;
-          ctx.fillStyle = lit ? '#ffe9a0' : '#4a3350';
-          ctx.fillRect(x, y, 12, 18);
+      const rows = 3;
+      const cols = 4;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const x = 22 + col * 58;
+          const y = 26 + row * 76;
+          const lit = windowRandom() > 0.25;
           if (lit) {
-            ctx.fillStyle = 'rgba(255,200,110,0.35)';
-            ctx.fillRect(x - 3, y - 3, 18, 24);
+            const halo = ctx.createRadialGradient(x + 13, y + 20, 4, x + 13, y + 20, 40);
+            halo.addColorStop(0, 'rgba(255,214,130,0.55)');
+            halo.addColorStop(1, 'rgba(255,190,110,0)');
+            ctx.fillStyle = halo;
+            ctx.fillRect(x - 26, y - 20, 80, 82);
           }
-          ctx.fillStyle = '#5a3a34';
-          ctx.fillRect(x + 5.5, y, 1, 18);
+          ctx.fillStyle = lit ? '#fff0b0' : '#4c3654';
+          // Окно с полукруглым верхом.
+          ctx.beginPath();
+          ctx.moveTo(x, y + 40);
+          ctx.lineTo(x, y + 12);
+          ctx.arc(x + 13, y + 12, 13, Math.PI, 0);
+          ctx.lineTo(x + 26, y + 40);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = '#6a4638';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.fillStyle = '#6a4638';
+          ctx.fillRect(x + 12, y, 2, 40);
         }
       }
+      // Карниз.
+      ctx.fillStyle = 'rgba(90,50,40,0.5)';
+      ctx.fillRect(0, 0, w, 6);
     }),
   );
-  const roof = new THREE.MeshBasicMaterial({ color: 0xa8523a });
-  for (let i = 0; i < 26; i++) {
-    const width = 5 + random() * 5;
-    const height = 4 + random() * 6;
-    const along = random();
+  const roof = new THREE.MeshBasicMaterial({ color: 0xb2583c });
+  const roofDark = new THREE.MeshBasicMaterial({ color: 0x8a4230 });
+  const addHouse = (x: number, y: number, z: number, width: number, height: number, turn: number, index: number) => {
     const house = new THREE.Group();
     const walls = new THREE.Mesh(
-      new THREE.BoxGeometry(width, height, width * 0.9),
-      new THREE.MeshBasicMaterial({ map: wallTextures[i % wallTextures.length] }),
+      new THREE.BoxGeometry(width, height, width * 0.8),
+      new THREE.MeshBasicMaterial({ map: wallTextures[index % wallTextures.length] }),
     );
     walls.position.y = height / 2;
     house.add(walls);
-    const top = new THREE.Mesh(new THREE.ConeGeometry(width * 0.78, width * 0.34, 4), roof);
+    // Четырёхскатная черепичная крыша со свесом.
+    const top = new THREE.Mesh(new THREE.ConeGeometry(width * 0.8, width * 0.3, 4), index % 3 === 0 ? roofDark : roof);
     top.rotation.y = Math.PI / 4;
-    top.position.y = height + width * 0.17;
+    top.scale.z = 0.86;
+    top.position.y = height + width * 0.15;
     house.add(top);
-    house.position.set(96 + along * 110, SEA_Y + 2 + along * 22 + random() * 8, -212 + along * 46 + random() * 14);
-    house.rotation.y = (random() - 0.5) * 0.5;
+    house.position.set(x, y, z);
+    house.rotation.y = turn;
     group.add(house);
+  };
+  /** Передняя (обращённая к террасе) поверхность холмов в точке (x, y) — туда ставим дома. */
+  const slopeZ = (x: number, y: number): number | null => {
+    let best: number | null = null;
+    for (const [hx, hz, width, height, depth] of hills) {
+      const inside = 1 - ((x - hx) / width) ** 2 - ((y - SEA_Y + 1) / height) ** 2;
+      if (inside <= 0.02) continue;
+      const z = hz + depth * Math.sqrt(inside);
+      if (best === null || z > best) best = z;
+    }
+    return best;
+  };
+  // Уступы: чем выше по склону, тем дальше и правее.
+  let index = 0;
+  for (let tier = 0; tier < 7; tier++) {
+    const count = 7 - Math.floor(tier / 2);
+    for (let i = 0; i < count; i++) {
+      const width = 9 + random() * 6;
+      const height = 8 + random() * 7;
+      const x = 82 + tier * 10 + i * (15 + random() * 3) + random() * 4;
+      const y = SEA_Y + 1 + tier * 7.5 + random() * 2.5;
+      const z = slopeZ(x, y + height * 0.5);
+      if (z === null) continue;
+      addHouse(x, y, z + 1.5, width, height, -0.45 + (random() - 0.5) * 0.35, index++);
+    }
   }
-  // Кипарисы между домами.
-  for (let i = 0; i < 18; i++) {
-    const along = random();
-    const height = 6 + random() * 7;
-    const tree = new THREE.Mesh(new THREE.ConeGeometry(1 + random() * 0.6, height, 8), new THREE.MeshBasicMaterial({ color: i % 2 ? 0x24402e : 0x1c3426 }));
-    tree.position.set(92 + along * 120, SEA_Y + 3 + along * 22 + random() * 9 + height / 2, -206 + along * 44 + random() * 16);
+  // Церковь с колокольней на вершине.
+  const churchZ = (slopeZ(190, SEA_Y + 60) ?? -150) + 1.5;
+  addHouse(190, SEA_Y + 54, churchZ, 15, 13, -0.5, 2);
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(5.5, 24, 5.5), new THREE.MeshBasicMaterial({ map: wallTextures[2] }));
+  tower.position.set(201, SEA_Y + 54 + 12, churchZ);
+  tower.rotation.y = -0.5;
+  group.add(tower);
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(4.4, 7, 4), roof);
+  spire.position.set(201, SEA_Y + 54 + 27.5, churchZ);
+  spire.rotation.y = Math.PI / 4 - 0.5;
+  group.add(spire);
+
+  // Кипарисы между домами и по гребню.
+  for (let i = 0; i < 60; i++) {
+    const tier = random() * 7.5;
+    const height = 8 + random() * 9;
+    const x = 78 + tier * 10 + random() * 110;
+    const y = SEA_Y + 2 + tier * 7.5 + random() * 4;
+    const z = slopeZ(x, y);
+    if (z === null) continue;
+    const tree = new THREE.Mesh(new THREE.ConeGeometry(1.5 + random() * 0.8, height, 10), new THREE.MeshBasicMaterial({ color: i % 2 ? 0x1f3a2c : 0x182e24 }));
+    tree.position.set(x, y + height / 2, z + 1);
     group.add(tree);
+  }
+  // Набережная у воды с фонарями.
+  const quay = new THREE.Mesh(new THREE.BoxGeometry(120, 3, 6), new THREE.MeshBasicMaterial({ color: 0x8a6a62 }));
+  quay.position.set(140, SEA_Y + 1, -102);
+  quay.rotation.y = -0.05;
+  group.add(quay);
+  for (let i = 0; i < 9; i++) {
+    const lampGlow = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe2a0, fog: false }));
+    lampGlow.position.set(88 + i * 12.5, SEA_Y + 5, -99 - i * 0.6);
+    group.add(lampGlow);
   }
 }
 
@@ -251,8 +347,41 @@ function buildTerrace(group: THREE.Group): void {
   floor.position.set(0, FLOOR_Y, EDGE_Z + 20);
   group.add(floor);
 
-  const stone = smooth(0xd8c8b4, 4);
-  const stoneDark = smooth(0xb8a694, 4);
+  // Камень: тёплый известняк с кладкой из блоков.
+  const masonry = (tone: string, scaleX: number, scaleY: number) => {
+    const texture = paintedTexture(512, 512, (ctx, w, h) => {
+      ctx.fillStyle = tone;
+      ctx.fillRect(0, 0, w, h);
+      const random = seededRandom(44);
+      const rows = 8;
+      const blockH = h / rows;
+      for (let row = 0; row < rows; row++) {
+        const blockW = w / 4;
+        const shift = row % 2 ? blockW / 2 : 0;
+        for (let col = -1; col < 5; col++) {
+          const x = col * blockW + shift;
+          const light = Math.floor(random() * 26) - 13;
+          ctx.fillStyle = light > 0 ? `rgba(255,255,255,${light / 160})` : `rgba(60,40,30,${-light / 130})`;
+          ctx.fillRect(x + 2, row * blockH + 2, blockW - 4, blockH - 4);
+        }
+        // Швы.
+        ctx.fillStyle = 'rgba(70,50,40,0.28)';
+        ctx.fillRect(0, row * blockH, w, 2);
+        for (let col = -1; col < 5; col++) ctx.fillRect(col * blockW + shift, row * blockH, 2, blockH);
+      }
+      for (let i = 0; i < 1500; i++) {
+        ctx.fillStyle = random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+        ctx.fillRect(random() * w, random() * h, 1 + random() * 3, 1 + random() * 2);
+      }
+    });
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(scaleX, scaleY);
+    return new THREE.MeshPhongMaterial({ map: texture, shininess: 4, specular: 0x1a1612 });
+  };
+  const stone = smooth(0xdccdb8, 4);
+  const stoneDark = smooth(0xbcab98, 4);
+  const columnStone = masonry('#dccdb8', 3, 5);
+  const wallStone = masonry('#c8b7a2', 0.16, 0.16);
 
   // Балюстрада: основание, точёные балясины, перила со скруглённым профилем.
   const railTop = FLOOR_Y + 3.1;
@@ -287,8 +416,8 @@ function buildTerrace(group: THREE.Group): void {
         [1.25, 0], [1.25, 0.5], [1.05, 0.62], [1.1, 0.9], [0.92, 1.05], [0.86, height * 0.5], [0.8, height - 1.1],
         [0.95, height - 0.95], [0.9, height - 0.7], [1.2, height - 0.45], [1.3, height - 0.1], [1.3, height],
       ],
-      stone,
-      24,
+      columnStone,
+      28,
     );
     column.position.set(x, FLOOR_Y, EDGE_Z);
     group.add(column);
@@ -308,9 +437,13 @@ function buildTerrace(group: THREE.Group): void {
     wall.lineTo(halfWidth - 0.9, 0);
     wall.absellipse(0, 0, halfWidth - 0.9, rise, 0, Math.PI, false);
     wall.lineTo(-halfWidth, 0);
-    const arch = new THREE.Mesh(new THREE.ExtrudeGeometry(wall, { depth: 1.5, bevelEnabled: false, curveSegments: 32 }), stoneDark);
+    const arch = new THREE.Mesh(new THREE.ExtrudeGeometry(wall, { depth: 1.5, bevelEnabled: false, curveSegments: 40 }), wallStone);
     arch.position.set(middle, archBase, EDGE_Z - 0.75);
     group.add(arch);
+    const trim = new THREE.Mesh(new THREE.TorusGeometry(1, 0.035, 8, 48, Math.PI), stone);
+    trim.scale.set(halfWidth - 0.9, rise, 6);
+    trim.position.set(middle, archBase, EDGE_Z + 0.78);
+    group.add(trim);
   }
 
   // Потолок террасы с тёмными балками.

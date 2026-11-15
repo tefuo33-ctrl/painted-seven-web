@@ -64,8 +64,11 @@ wss.on('connection', (socket: WebSocket) => {
       case 'play':
         room?.play(clientId, message.card, message.joker);
         break;
-      case 'next':
-        room?.next(clientId);
+      case 'ready':
+        room?.ready(clientId);
+        break;
+      case 'config':
+        room?.configure(clientId, message.botLevel);
         break;
       case 'leave':
         room?.leave(clientId);

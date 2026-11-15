@@ -3,6 +3,7 @@
 
 import { chooseBid, chooseMove } from '../src/ai/bot';
 import {
+  type BotLevel,
   type Card,
   type GameState,
   type JokerChoice,
@@ -14,6 +15,7 @@ import {
   nextRound,
   placeBid,
   playCard,
+  timeoutStrike,
 } from '../src/engine';
 import { type SeatInfo, type ServerMessage, PLAYER_COUNT, viewFor } from '../src/net/protocol';
 import { pickBotNames } from '../src/shared/names';
@@ -23,7 +25,8 @@ import { type Skin, randomGender, randomSkin } from '../src/shared/skin';
 const BOT_DELAY = 900;
 const TRICK_DELAY = 2300;
 const BEFORE_DEAL = 1400;
-const ROUND_END_TIMEOUT = 30000;
+/** Пауза перед следующим раундом, когда все готовы. */
+const NEXT_ROUND_DELAY = 1200;
 
 export interface Connection {
   send(message: ServerMessage): void;
@@ -34,6 +37,8 @@ interface Seat {
   name: string;
   skin: Skin;
   connection: Connection | null;
+  /** Готов к следующему раунду. */
+  ready: boolean;
 }
 
 export class Room {
@@ -72,7 +77,7 @@ export class Room {
       if (this.started) throw new Error('Игра в этой комнате уже началась');
       index = this.seats.findIndex((seat) => seat === null);
       if (index < 0) throw new Error('В комнате уже четыре игрока');
-      this.seats[index] = { clientId, name, skin, connection };
+      this.seats[index] = { clientId, name, skin, connection, ready: false };
     } else {
       const seat = this.seats[index]!;
       seat.connection = connection;
@@ -83,7 +88,7 @@ export class Room {
     }
     this.broadcastRoom();
     if (this.game) {
-      connection.send({ t: 'state', game: viewFor(this.game, index) });
+      connection.send({ t: 'state', game: viewFor(this.game, index), now: Date.now() });
       this.schedule(); // человек вернулся — бот больше не ходит за него
     }
     return index;
@@ -110,10 +115,10 @@ export class Room {
     const taken = this.seats.flatMap((seat) => (seat ? [seat.name] : []));
     const names = pickBotNames(genders, taken);
     empty.forEach((index, n) => {
-      this.seats[index] = { clientId: null, name: names[n], skin: randomSkin(genders[n]), connection: null };
+      this.seats[index] = { clientId: null, name: names[n], skin: randomSkin(genders[n]), connection: null, ready: true };
     });
     this.game = createGame({
-      settings: this.settings,
+      settings: { ...this.settings, botLevel: this.botLevel },
       playerNames: this.seats.map((seat) => seat!.name),
     });
     this.broadcastRoom();
@@ -134,11 +139,27 @@ export class Room {
     this.schedule();
   }
 
-  /** Перейти к следующему раунду (кнопку может нажать любой игрок). */
-  next(clientId: string): void {
-    if (this.seatOf(clientId) < 0 || !this.game || this.game.phase !== 'roundEnd') return;
-    nextRound(this.game);
+  /** Игрок подтвердил, что готов к следующему раунду. Раунд начнётся, когда готовы все люди на связи. */
+  ready(clientId: string): void {
+    const index = this.seatOf(clientId);
+    if (index < 0 || !this.game || this.game.phase !== 'roundEnd') return;
+    this.seats[index]!.ready = true;
+    this.broadcastRoom();
     this.schedule();
+  }
+
+  /** Создатель комнаты выбирает сложность ботов (только до начала игры). */
+  configure(clientId: string, botLevel: BotLevel): void {
+    if (clientId !== this.hostId) throw new Error('Настройки меняет только создатель комнаты');
+    if (this.started) return;
+    if (!['easy', 'normal', 'hard', 'expert'].includes(botLevel)) return;
+    this.botLevel = botLevel;
+    this.broadcastRoom();
+  }
+
+  /** Все люди на связи подтвердили готовность? Боты и отключившиеся раунд не задерживают. */
+  private get everyoneReady(): boolean {
+    return this.seats.every((seat) => !seat || seat.clientId === null || seat.connection === null || seat.ready);
   }
 
   private requireTurn(clientId: string): GameState {
@@ -153,7 +174,8 @@ export class Room {
   /** За это место сейчас действует сервер (бот или отключившийся человек)? */
   private automatic(index: number): boolean {
     const seat = this.seats[index];
-    return !seat || seat.clientId === null || seat.connection === null;
+    // Бот, отключившийся человек или игрок, выбывший из раунда за бездействие.
+    return !seat || seat.clientId === null || seat.connection === null || this.game?.autoPlay[index] === true;
   }
 
   /** Разослать состояние и запланировать следующий автоматический шаг. */
@@ -186,26 +208,46 @@ export class Room {
         });
         break;
       case 'bidding':
+      case 'playing': {
+        const pause = this.takeDealPause();
         if (this.automatic(game.turn)) {
-          after(BOT_DELAY + this.takeDealPause(), () => placeBid(game, game.turn, chooseBid(game, game.turn)));
-        }
-        break;
-      case 'playing':
-        if (this.automatic(game.turn)) {
-          after(BOT_DELAY + this.takeDealPause(), () => {
-            const move = chooseMove(game, game.turn);
-            playCard(game, game.turn, move.card, move.joker);
+          // За людей (отключившихся или выбывших) бот играет на обычном уровне.
+          const level = this.seats[game.turn]?.clientId === null ? undefined : 'normal';
+          after(BOT_DELAY + pause, () => {
+            if (game.phase === 'bidding') {
+              placeBid(game, game.turn, chooseBid(game, game.turn, level));
+            } else {
+              const move = chooseMove(game, game.turn, level);
+              playCard(game, game.turn, move.card, move.joker);
+            }
+          });
+        } else if (game.settings.turnSeconds > 0) {
+          // Таймер хода живёт на сервере: переподключение его не сбрасывает.
+          if (game.turnStartedAt === 0) {
+            game.turnStartedAt = Date.now() + pause;
+            this.broadcastState();
+          }
+          const deadline = game.turnStartedAt + game.settings.turnSeconds * 1000;
+          after(Math.max(0, deadline - Date.now()), () => {
+            timeoutStrike(game); // штраф; после третьего подряд игрок выбывает из раунда
+            game.turnStartedAt = Date.now();
           });
         }
         break;
+      }
       case 'trickEnd':
         after(TRICK_DELAY, () => finishTrick(game));
         break;
       case 'roundEnd':
-        // Если никто не нажал «Следующий раунд» — продолжаем сами.
-        after(ROUND_END_TIMEOUT, () => {
-          if (game.phase === 'roundEnd') nextRound(game);
-        });
+        // Следующий раунд начинается, только когда готовы все люди на связи.
+        if (this.everyoneReady) {
+          after(NEXT_ROUND_DELAY, () => {
+            if (game.phase !== 'roundEnd') return;
+            nextRound(game);
+            for (const seat of this.seats) if (seat && seat.clientId !== null) seat.ready = false;
+            this.broadcastRoom();
+          });
+        }
         break;
       default:
         break;
@@ -213,6 +255,7 @@ export class Room {
   }
 
   private dealPause = 0;
+  private botLevel: BotLevel = 'normal';
 
   private takeDealPause(): number {
     const pause = this.dealPause;
@@ -230,6 +273,7 @@ export class Room {
       skin: seat.skin,
       bot: seat.clientId === null,
       connected: seat.clientId === null || seat.connection !== null,
+      ready: seat.clientId === null || seat.ready,
     };
   }
 
@@ -242,6 +286,10 @@ export class Room {
         seats: Array.from({ length: PLAYER_COUNT }, (_, i) => this.seatInfo((index + i) % PLAYER_COUNT)),
         host: seat.clientId === this.hostId,
         started: this.started,
+        botLevel: this.botLevel,
+        bots: this.started
+          ? this.seats.filter((s) => s?.clientId === null).length
+          : this.seats.filter((s) => s === null).length,
       });
     });
   }
@@ -250,7 +298,7 @@ export class Room {
     const game = this.game;
     if (!game) return;
     this.seats.forEach((seat, index) => {
-      seat?.connection?.send({ t: 'state', game: viewFor(game, index) });
+      seat?.connection?.send({ t: 'state', game: viewFor(game, index), now: Date.now() });
     });
   }
 

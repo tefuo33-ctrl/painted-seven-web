@@ -3,7 +3,8 @@
 
 import * as THREE from 'three';
 import { type Card, type Rank, type Suit, RANKS, SUITS, isJoker } from '../engine';
-import { PALETTE, hex, pixelTexture } from './gfx';
+import { rankLetter } from '../i18n';
+import { PALETTE, hex, paintedTexture } from './gfx';
 
 /** Во сколько раз текстура крупнее координат рисования (чем больше — тем чётче карты). */
 const ATLAS_SCALE = 4;
@@ -89,39 +90,6 @@ function drawSuit(ctx: CanvasRenderingContext2D, suit: Suit, cx: number, cy: num
   ctx.restore();
 }
 
-// ---------- Пиксельные цифры и буквы рангов (5×7) ----------
-
-const GLYPHS: Record<string, string[]> = {
-  '6': ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'],
-  '7': ['#####', '....#', '...#.', '..#..', '..#..', '..#..', '..#..'],
-  '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
-  '9': ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
-  '1': ['.#.', '##.', '.#.', '.#.', '.#.', '.#.', '###'],
-  '0': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
-  В: ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
-  Д: ['..##.', '.#.#.', '.#.#.', '.#.#.', '.#.#.', '#####', '#...#'],
-  К: ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
-  Т: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
-};
-
-const RANK_TEXT: Record<Rank, string> = {
-  6: '6', 7: '7', 8: '8', 9: '9', 10: '10', 11: 'В', 12: 'Д', 13: 'К', 14: 'Т',
-};
-
-function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, scale: number, color: string): void {
-  ctx.fillStyle = color;
-  let cursor = x;
-  for (const char of text) {
-    const glyph = GLYPHS[char];
-    glyph.forEach((row, rowIndex) => {
-      for (let col = 0; col < row.length; col++) {
-        if (row[col] === '#') ctx.fillRect(cursor + col * scale, y + rowIndex * scale, scale, scale);
-      }
-    });
-    cursor += (glyph[0].length + 1) * scale;
-  }
-}
-
 // ---------- Лицо карты ----------
 
 /** Где стоят значки на числовых картах: [колонка -1…1, строка 0…1]. */
@@ -200,45 +168,95 @@ function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, radius:
   facet(ctx, points, hex(PALETTE.gold), hex(PALETTE.goldDark), cx);
 }
 
+/** Ранг карты для текущего языка: цифра или буква (В/Д/К/Т, B/D/K/A, J/Q/K/A). */
+function rankText(rank: Rank): string {
+  return rank <= 10 ? String(rank) : rankLetter(rank);
+}
+
+/** Ранг и маленький значок масти в углу карты. */
+function drawIndex(ctx: CanvasRenderingContext2D, card: Card, color: string): void {
+  const text = rankText(card.rank);
+  ctx.fillStyle = color;
+  ctx.font = `bold ${text.length > 1 ? 15 : 18}px Georgia, 'Times New Roman', serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(text, 11.5, 20);
+  drawSuit(ctx, card.suit, 11.5, 30, 5);
+}
+
 function drawFace(ctx: CanvasRenderingContext2D, card: Card): void {
   const joker = isJoker(card);
   const [main] = suitColors(card.suit);
-  ctx.fillStyle = hex(joker ? PALETTE.jokerPaper : PALETTE.paper);
-  ctx.fillRect(0, 0, CELL_W, CELL_H);
-  // Тонкая рамка цвета масти (у джокера — золотая).
-  ctx.strokeStyle = joker ? hex(PALETTE.goldDark) : main;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(2.5, 2.5, CELL_W - 5, CELL_H - 5);
+  const paper = hex(joker ? PALETTE.jokerPaper : PALETTE.paper);
 
-  // Ранг и маленький значок масти в левом верхнем углу.
-  // Ранг крупный: его должно быть видно даже на далёкой карте при низком разрешении.
-  drawText(ctx, RANK_TEXT[card.rank], 5, 5, 3, main);
-  drawSuit(ctx, card.suit, 12, 35, 6);
+  // Бумага с лёгким переходом тона — карта не выглядит плоской заливкой.
+  const base = ctx.createLinearGradient(0, 0, CELL_W, CELL_H);
+  base.addColorStop(0, joker ? '#f3e2ae' : '#f7f3e6');
+  base.addColorStop(1, paper);
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, CELL_W, CELL_H);
+
+  // Двойная рамка: тонкая цветная и внутренняя золотистая с уголками.
+  const frame = joker ? hex(PALETTE.goldDark) : main;
+  ctx.strokeStyle = frame;
+  ctx.lineWidth = 0.9;
+  ctx.strokeRect(2.5, 2.5, CELL_W - 5, CELL_H - 5);
+  ctx.strokeStyle = joker ? 'rgba(184,148,47,0.7)' : 'rgba(184,148,47,0.45)';
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(4.5, 4.5, CELL_W - 9, CELL_H - 9);
+  ctx.fillStyle = joker ? hex(PALETTE.goldDark) : 'rgba(184,148,47,0.7)';
+  for (const [x, y] of [[4.5, 4.5], [CELL_W - 4.5, 4.5], [4.5, CELL_H - 4.5], [CELL_W - 4.5, CELL_H - 4.5]]) {
+    ctx.beginPath();
+    ctx.arc(x, y, 1.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   if (card.rank === 14) {
-    drawSuit(ctx, card.suit, 37, 58, 18);
+    // Туз: крупный значок в ореоле.
+    ctx.strokeStyle = 'rgba(184,148,47,0.5)';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.arc(CELL_W / 2, CELL_H / 2, 21, 0, Math.PI * 2);
+    ctx.stroke();
+    drawSuit(ctx, card.suit, CELL_W / 2, CELL_H / 2, 17);
   } else if (card.rank >= 11) {
+    // Картинка в рамке с золотой каймой.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(15, 22, CELL_W - 30, CELL_H - 44);
+    ctx.clip();
+    ctx.fillStyle = card.suit === 'hearts' || card.suit === 'diamonds' ? '#f1dccf' : '#dcdfe6';
+    ctx.fillRect(15, 22, CELL_W - 30, CELL_H - 44);
+    ctx.translate(-3, -4);
     drawPortrait(ctx, card.rank, card.suit);
+    ctx.restore();
+    ctx.strokeStyle = hex(PALETTE.goldDark);
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(15, 22, CELL_W - 30, CELL_H - 44);
   } else {
     for (const [col, row] of PIPS[card.rank]) {
-      drawSuit(ctx, card.suit, 41 + col * 11, 33 + row * 50, 5.5);
+      drawSuit(ctx, card.suit, CELL_W / 2 + col * 11, 24 + row * 48, 5.6);
     }
   }
-  if (joker) drawStar(ctx, 52, 13, 8);
-  if (card.rank >= 11 && card.rank <= 13) {
-    // Портрет не должен залезать под ранг: рисуем ранг ещё раз поверх.
-    ctx.fillStyle = hex(PALETTE.paper);
-    ctx.fillRect(4, 4, 18, 23);
-    drawText(ctx, RANK_TEXT[card.rank], 5, 5, 3, main);
-  }
+  if (joker) drawStar(ctx, CELL_W / 2, CELL_H / 2, 7);
+
+  // Индексы в двух углах: левый верхний и перевёрнутый правый нижний.
+  drawIndex(ctx, card, main);
+  ctx.save();
+  ctx.translate(CELL_W, CELL_H);
+  ctx.rotate(Math.PI);
+  drawIndex(ctx, card, main);
+  ctx.restore();
 }
 
 function drawBack(ctx: CanvasRenderingContext2D): void {
   const w = CELL_W;
   const h = CELL_H;
+  ctx.fillStyle = '#f2ecdc';
+  ctx.fillRect(0, 0, w, h); // светлая кайма
   ctx.fillStyle = hex(PALETTE.felt);
-  ctx.fillRect(0, 0, w, h);
-  const inset = 3;
+  ctx.fillRect(2.5, 2.5, w - 5, h - 5);
+  const inset = 4;
   const cx = w / 2;
   const cy = h / 2;
   // Четыре треугольника по диагоналям.
@@ -248,59 +266,112 @@ function drawBack(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = hex(PALETTE.feltDark);
   fillPolygon(ctx, [[inset, inset], [w - inset, inset], [cx, cy]], 0, 0, 1);
   fillPolygon(ctx, [[inset, h - inset], [cx, cy], [w - inset, h - inset]], 0, 0, 1);
-  // Тонкая светлая рамка с отступом.
-  ctx.strokeStyle = '#d9d2b8';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(6.5, 6.5, w - 13, h - 13);
-  // Золотой ромб в центре.
-  facet(ctx, [[cx, cy - 13], [cx + 8, cy], [cx, cy + 13], [cx - 8, cy]], hex(PALETTE.gold), hex(PALETTE.goldDark), cx);
+
+  // Ромбическая сетка поверх — как на настоящей рубашке.
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(inset, inset, w - inset * 2, h - inset * 2);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(217,210,184,0.16)';
+  ctx.lineWidth = 0.4;
+  for (let i = -h; i < w + h; i += 5) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + h, h);
+    ctx.moveTo(i, h);
+    ctx.lineTo(i + h, 0);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Золотая рамка с отступом и угловыми завитками.
+  ctx.strokeStyle = hex(PALETTE.gold);
+  ctx.lineWidth = 0.7;
+  ctx.strokeRect(7.5, 7.5, w - 15, h - 15);
+  ctx.strokeStyle = 'rgba(217,210,184,0.8)';
+  ctx.lineWidth = 0.4;
+  ctx.strokeRect(9.5, 9.5, w - 19, h - 19);
+  ctx.fillStyle = hex(PALETTE.gold);
+  for (const [x, y] of [[7.5, 7.5], [w - 7.5, 7.5], [7.5, h - 7.5], [w - 7.5, h - 7.5]]) {
+    fillPolygon(ctx, [[0, -2.4], [2.4, 0], [0, 2.4], [-2.4, 0]], x, y, 1);
+  }
+  // Золотой ромб в центре с ореолом и малые ромбы сверху и снизу.
+  ctx.strokeStyle = 'rgba(217,180,74,0.6)';
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 13, 19, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  facet(ctx, [[cx, cy - 14], [cx + 9, cy], [cx, cy + 14], [cx - 9, cy]], hex(PALETTE.gold), hex(PALETTE.goldDark), cx);
+  facet(ctx, [[cx, cy - 5], [cx + 3.2, cy], [cx, cy + 5], [cx - 3.2, cy]], '#f6e3a0', hex(PALETTE.gold), cx);
+  for (const y of [20, h - 20]) {
+    facet(ctx, [[cx, y - 4], [cx + 2.6, y], [cx, y + 4], [cx - 2.6, y]], hex(PALETTE.gold), hex(PALETTE.goldDark), cx);
+  }
 }
 
 let atlas: THREE.CanvasTexture | null = null;
 
+function paintAtlas(ctx: CanvasRenderingContext2D): void {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, CELL_W * COLS * ATLAS_SCALE, CELL_H * ROWS * ATLAS_SCALE);
+  const cell = (index: number, draw: () => void) => {
+    ctx.save();
+    ctx.translate((index % COLS) * CELL_W * ATLAS_SCALE, Math.floor(index / COLS) * CELL_H * ATLAS_SCALE);
+    ctx.scale(ATLAS_SCALE, ATLAS_SCALE);
+    ctx.beginPath();
+    ctx.rect(0, 0, CELL_W, CELL_H);
+    ctx.clip();
+    draw();
+    ctx.restore();
+  };
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      const card: Card = { suit, rank };
+      cell(cardCell(card), () => drawFace(ctx, card));
+    }
+  }
+  cell(CELL_BACK, () => drawBack(ctx));
+  cell(CELL_EDGE, () => {
+    ctx.fillStyle = hex(PALETTE.paperEdge);
+    ctx.fillRect(0, 0, CELL_W, CELL_H);
+  });
+  for (const suit of SUITS) {
+    cell(suitIconCell(suit), () => drawSuit(ctx, suit, CELL_W / 2, CELL_H / 2, 26));
+  }
+}
+
 /** Текстура со всеми картами (создаётся один раз). */
 export function getCardAtlas(): THREE.CanvasTexture {
   if (atlas) return atlas;
-  const texture = pixelTexture(CELL_W * COLS * ATLAS_SCALE, CELL_H * ROWS * ATLAS_SCALE, (ctx) => {
-    const cell = (index: number, draw: () => void) => {
-      ctx.save();
-      ctx.translate((index % COLS) * CELL_W * ATLAS_SCALE, Math.floor(index / COLS) * CELL_H * ATLAS_SCALE);
-      ctx.scale(ATLAS_SCALE, ATLAS_SCALE);
-      ctx.beginPath();
-      ctx.rect(0, 0, CELL_W, CELL_H);
-      ctx.clip();
-      draw();
-      ctx.restore();
-    };
-    for (const suit of SUITS) {
-      for (const rank of RANKS) {
-        const card: Card = { suit, rank };
-        cell(cardCell(card), () => drawFace(ctx, card));
-      }
-    }
-    cell(CELL_BACK, () => drawBack(ctx));
-    cell(CELL_EDGE, () => {
-      ctx.fillStyle = hex(PALETTE.paperEdge);
-      ctx.fillRect(0, 0, CELL_W, CELL_H);
-    });
-    for (const suit of SUITS) {
-      cell(suitIconCell(suit), () => {
-        // Значок козыря на светлой гранёной плашке с золотой каймой — виден на любом фоне.
-        const plate: Polygon = [[32, 12], [58, 30], [58, 66], [32, 84], [6, 66], [6, 30]];
-        ctx.fillStyle = hex(PALETTE.goldDark);
-        fillPolygon(ctx, plate, 0, 0, 1);
-        const inner: Polygon = [[32, 17], [54, 32], [54, 64], [32, 79], [10, 64], [10, 32]];
-        facet(ctx, inner, hex(PALETTE.paper), '#f7f3e6', 32);
-        drawSuit(ctx, suit, 32, 48, 17);
-      });
-    }
-  });
-  // Уменьшенные копии текстуры: далёкие карты не «искрят», но остаются пиксельными.
-  // Сглаживание и уменьшенные копии: ранг и масть читаются и вблизи, и на дальнем конце стола.
-  texture.generateMipmaps = true;
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  const texture = paintedTexture(CELL_W * COLS * ATLAS_SCALE, CELL_H * ROWS * ATLAS_SCALE, (ctx) => paintAtlas(ctx));
   texture.anisotropy = 8;
   atlas = texture;
   return texture;
+}
+
+/** Перерисовать карты (после смены языка меняются буквы рангов). */
+export function repaintCardAtlas(): void {
+  if (!atlas) return;
+  const canvas = atlas.image as HTMLCanvasElement;
+  paintAtlas(canvas.getContext('2d')!);
+  atlas.needsUpdate = true;
+  imageCache.clear();
+}
+
+const imageCache = new Map<string, string>();
+
+/** Картинка одной карты (data URL) — для интерфейса: козырь в углу экрана. */
+export function cardImage(card: Card): string {
+  const key = `${card.suit}:${card.rank}`;
+  let url = imageCache.get(key);
+  if (!url) {
+    const canvas = document.createElement('canvas');
+    canvas.width = CELL_W * 3;
+    canvas.height = CELL_H * 3;
+    const ctx = canvas.getContext('2d')!;
+    ctx.scale(3, 3);
+    drawFace(ctx, card);
+    url = canvas.toDataURL('image/png');
+    imageCache.set(key, url);
+  }
+  return url;
 }

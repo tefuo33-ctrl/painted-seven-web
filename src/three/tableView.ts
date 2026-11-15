@@ -7,7 +7,7 @@ import { type Card, type Suit, cardLabel, isJoker } from '../engine';
 import { Card3D, type MoveOptions, type Pose, type PoseSource } from './card3d';
 import { PALETTE, glow } from './gfx';
 import type { Stage } from './stage';
-import { CHIP_HEIGHT, SEATS, buildChip, seatPoint } from './table';
+import { SEATS, seatPoint } from './table';
 
 /**
  * Что видит один игрок. Места считаются от него: 0 — он сам, дальше по часовой стрелке.
@@ -63,8 +63,6 @@ export class TableView {
   hovered: string | null = null;
   /** Где соперники держат карты (задаётся, когда персонажи рассажены). */
   handAnchor: (seat: number) => HandAnchor | null = () => null;
-  /** Вызывается, когда фишка за взятку ложится на стол (для звука). */
-  onChip: () => void = () => {};
 
   private stage: Stage;
   private group = new THREE.Group();
@@ -72,7 +70,6 @@ export class TableView {
   private trumpTimer = 0;
   private crystal: THREE.Mesh;
   private state: TableState | null = null;
-  private trickChips: THREE.Mesh[][] = [[], [], [], []];
 
   constructor(stage: Stage) {
     this.stage = stage;
@@ -278,7 +275,6 @@ export class TableView {
 
     if (options.deal && state.trumpCard) this.showTrump(state.trumpCard, 0.6 + state.hands.flat().length * 0.085);
     if (!state.trumpCard) this.hideTrump();
-    this.syncChips(state.taken);
   }
 
   /** Показать всем карту, определившую козырь: она поднимается над столом на несколько секунд. */
@@ -300,23 +296,6 @@ export class TableView {
   private hideTrump(): void {
     this.trumpTimer = 0;
     this.trumpCard.mesh.visible = false;
-  }
-
-  /** Золотые фишки перед игроком — по одной за каждую взятую взятку. */
-  private syncChips(taken: number[]): void {
-    taken.forEach((count, seat) => {
-      const stack = this.trickChips[seat];
-      while (stack.length < count) {
-        const chip = buildChip(PALETTE.goldDark);
-        const base = seatPoint(seat, -2.25, 0, 3.75);
-        chip.position.set(base.x, CHIP_HEIGHT / 2 + stack.length * CHIP_HEIGHT + 2.2, base.z);
-        chip.userData.restY = CHIP_HEIGHT / 2 + stack.length * CHIP_HEIGHT;
-        chip.userData.landed = false;
-        stack.push(chip);
-        this.group.add(chip);
-      }
-      while (stack.length > count) this.group.remove(stack.pop()!);
-    });
   }
 
   /** Сыгранная взятка улетает к тому, кто её взял, и исчезает. */
@@ -381,20 +360,6 @@ export class TableView {
           .then(() => {
             if (this.trumpTimer <= 0) this.trumpCard.mesh.visible = false;
           });
-      }
-    }
-
-    // Фишки за взятки падают на стол.
-    for (const stack of this.trickChips) {
-      for (const chip of stack) {
-        const rest = chip.userData.restY as number;
-        if (chip.position.y > rest) {
-          chip.position.y = Math.max(rest, chip.position.y - delta * 9);
-          if (chip.position.y === rest && !chip.userData.landed) {
-            chip.userData.landed = true;
-            this.onChip();
-          }
-        }
       }
     }
 
