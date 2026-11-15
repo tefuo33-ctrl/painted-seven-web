@@ -62,7 +62,7 @@ export function createStage(container: HTMLElement): Stage {
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), gfx.bloomStrength, 0.5, 0.82);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), gfx.bloomStrength, 0.5, 0.9);
   composer.addPass(bloom);
   const vignette = new ShaderPass(VignetteShader);
   composer.addPass(vignette);
@@ -76,8 +76,10 @@ export function createStage(container: HTMLElement): Stage {
   function resize(): void {
     const width = Math.max(1, container.clientWidth);
     const height = Math.max(1, container.clientHeight);
-    const renderWidth = Math.max(160, Math.round(width / gfx.pixelScale));
-    const renderHeight = Math.max(120, Math.round(height / gfx.pixelScale));
+    // Считаем в настоящих пикселях экрана: у телефонов их в 2–3 раза больше, чем «точек» в браузере.
+    const density = Math.min(window.devicePixelRatio || 1, 3) / gfx.pixelScale;
+    const renderWidth = Math.max(160, Math.round(width * density));
+    const renderHeight = Math.max(120, Math.round(height * density));
     renderer.setSize(renderWidth, renderHeight, false);
     composer.setSize(renderWidth, renderHeight);
     updateSnap(renderWidth, renderHeight);
@@ -113,12 +115,14 @@ export function createStage(container: HTMLElement): Stage {
       basePosition.z,
     );
     camera.lookAt(lookAt);
+    camera.updateMatrixWorld();
     location.update(time);
     for (const callback of callbacks) callback(time, delta);
     composer.render(delta);
   }
 
-  window.addEventListener('resize', resize);
+  // Следим за размером контейнера (а не только окна): так сцена не растягивается при любом изменении.
+  new ResizeObserver(resize).observe(container);
   applySettings();
   renderer.setAnimationLoop(frame);
 

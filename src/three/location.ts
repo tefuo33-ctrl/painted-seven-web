@@ -457,7 +457,7 @@ function buildLantern(group: THREE.Group): (time: number) => void {
   return (time) => {
     // Мерцание пламени: несколько волн разной частоты.
     const flicker = 1 + Math.sin(time * 9.1) * 0.04 + Math.sin(time * 23.7) * 0.03 + Math.sin(time * 3.3) * 0.05;
-    light.intensity = 34 * flicker;
+    light.intensity = 17 * flicker;
     flame.scale.setScalar(0.9 + (flicker - 1) * 3);
     flame.rotation.y = time * 2;
   };
@@ -483,7 +483,7 @@ export function buildLocation(scene: THREE.Scene): Location {
   const updateLantern = buildLantern(group);
 
   // Свет: тёплое небо сверху, закат со стороны моря, фонарь над столом.
-  group.add(new THREE.HemisphereLight(0xffd0b8, 0x3a2a48, 1.3));
+  group.add(new THREE.HemisphereLight(0xffd0b8, 0x4a3a58, 1.5));
   const sunset = new THREE.DirectionalLight(0xff8a5a, 1.1);
   sunset.position.set(0, 6, -30);
   group.add(sunset);
