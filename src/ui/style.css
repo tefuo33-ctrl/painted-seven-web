@@ -804,3 +804,29 @@ button.card:disabled {
     transition: none;
   }
 }
+
+/* ---------- 3D-сцена на заднем плане ---------- */
+
+#stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+
+#app {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+#app > * {
+  pointer-events: auto;
+}
+
+body.scene-only #app {
+  display: none;
+}
+
+.menu {
+  background: linear-gradient(rgba(10, 8, 20, 0.35), rgba(10, 8, 20, 0.7));
+}
