@@ -22,6 +22,9 @@ import {
   totals,
   winners,
 } from '../engine';
+import { HAIR_FEMALE, SHIRTS, SUITS_MALE, TIES } from '../three/character';
+import { hex } from '../three/gfx';
+import type { Profile } from './profile';
 
 export const HUMAN = 0;
 
@@ -34,8 +37,9 @@ export type Modal =
   | { kind: 'joker'; mode: JokerMode | null };
 
 export interface UiState {
-  screen: 'menu' | 'game';
+  screen: 'menu' | 'game' | 'wardrobe';
   game: GameState | null;
+  profile: Profile;
   settings: RuleSettings;
   hasSave: boolean;
   modal: Modal;
@@ -90,6 +94,7 @@ function menuHtml(ui: UiState): string {
       <p class="lead">Вы против трёх ботов. Закажите взятки — и возьмите ровно столько.</p>
       <button class="btn primary" data-action="start">Новая партия</button>
       ${ui.hasSave ? '<button class="btn" data-action="continue">Продолжить партию</button>' : ''}
+      <button class="btn" data-action="open-wardrobe">Гардероб</button>
       <button class="btn" data-action="open-rules">Правила коротко</button>
       <details class="settings">
         <summary>Настройки правил</summary>
@@ -122,6 +127,45 @@ function menuHtml(ui: UiState): string {
         <p class="hint">Настройки действуют на новую партию.</p>
       </details>
     </div>
+  </div>`;
+}
+
+// ---------- Гардероб ----------
+
+function segment(key: string, value: number | string, label: string, active: boolean): string {
+  return `<button class="btn seg ${active ? 'active' : ''}" data-action="skin" data-value="${key}:${value}">${label}</button>`;
+}
+
+function swatches(key: string, items: { name: string; color: number }[], current: number): string {
+  return items
+    .map(
+      (item, i) => `<button class="swatch ${i === current ? 'active' : ''}" data-action="skin" data-value="${key}:${i}"
+        style="background:${hex(item.color)}" title="${item.name}" aria-label="${item.name}"></button>`,
+    )
+    .join('');
+}
+
+function wardrobeHtml(ui: UiState): string {
+  const { skin, name } = ui.profile;
+  const male = skin.gender === 'male';
+  const options = male
+    ? `<div class="row">${SUITS_MALE.map((s, i) => segment('suit', i, s.name, skin.suit === i)).join('')}</div>
+       <p class="row-title">Галстук: ${TIES[skin.tie].name.toLowerCase()}</p>
+       <div class="row">${swatches('tie', TIES, skin.tie)}</div>`
+    : `<div class="row">${HAIR_FEMALE.map((h, i) => segment('hair', i, h, skin.hair === i)).join('')}</div>
+       <p class="row-title">Рубашка: ${SHIRTS[skin.shirt].name.toLowerCase()}</p>
+       <div class="row">${swatches('shirt', SHIRTS, skin.shirt)}</div>`;
+  return `<div class="wardrobe">
+    <h2>Гардероб</h2>
+    <label class="name-field">Ваше имя
+      <input type="text" data-profile="name" maxlength="14" value="${name.replace(/"/g, '&quot;')}" placeholder="Вы" autocomplete="off">
+    </label>
+    <div class="row">
+      ${segment('gender', 'male', 'Мужчина', male)}
+      ${segment('gender', 'female', 'Женщина', !male)}
+    </div>
+    ${options}
+    <button class="btn primary" data-action="close-wardrobe">Готово</button>
   </div>`;
 }
 
@@ -374,6 +418,7 @@ function overlayHtml(ui: UiState): string {
 }
 
 export function appHtml(ui: UiState): string {
+  if (ui.screen === 'wardrobe') return wardrobeHtml(ui);
   if (ui.screen === 'menu' || !ui.game) return menuHtml(ui) + overlayHtml(ui);
   return hudHtml(ui, ui.game) + overlayHtml(ui);
 }

@@ -41,6 +41,8 @@ export interface Stage {
   canvas: HTMLCanvasElement;
   /** Где на экране находится точка сцены: координаты в пикселях страницы. */
   toScreen(point: THREE.Vector3): { x: number; y: number };
+  /** Куда смотрит камера: на стол или на персонажа в «Гардеробе». */
+  setView(view: 'table' | 'wardrobe'): void;
   /** Применить изменённые настройки из `gfx`. */
   applySettings(): void;
   /** Добавить функцию, которая вызывается каждый кадр (time и delta — в секундах). */
@@ -76,6 +78,12 @@ export function createStage(container: HTMLElement): Stage {
   // чтобы стол помещался по ширине.
   const basePosition = new THREE.Vector3();
   const lookAt = new THREE.Vector3();
+  let view: 'table' | 'wardrobe' = 'table';
+
+  // В «Гардеробе» персонаж стоит спиной к закату — подсвечиваем его спереди.
+  const wardrobeLight = new THREE.PointLight(0xffe2b8, 0, 40, 1);
+  wardrobeLight.position.set(3, 3, 25);
+  scene.add(wardrobeLight);
 
   function resize(): void {
     const width = Math.max(1, container.clientWidth);
@@ -97,6 +105,13 @@ export function createStage(container: HTMLElement): Stage {
     const t = (camera.fov - 50) / 26; // 0 — широкий экран, 1 — узкий вертикальный
     basePosition.set(0, THREE.MathUtils.lerp(7.2, 10.5, t), THREE.MathUtils.lerp(11, 14.5, t));
     lookAt.set(0, THREE.MathUtils.lerp(0.9, 0.6, t), THREE.MathUtils.lerp(-3.5, -2.5, t));
+    if (view === 'wardrobe') {
+      // На широком экране панель справа — персонаж смещён влево; на узком панель снизу.
+      const wide = aspect >= 1;
+      camera.fov = wide ? 46 : 62;
+      basePosition.set(wide ? 2.6 : 0, 0.8, wide ? 29 : 31);
+      lookAt.set(wide ? 2.6 : 0, wide ? -0.1 : -2.6, 16);
+    }
     camera.updateProjectionMatrix();
   }
 
@@ -146,6 +161,11 @@ export function createStage(container: HTMLElement): Stage {
       };
     },
     applySettings,
+    setView(next) {
+      view = next;
+      wardrobeLight.intensity = next === 'wardrobe' ? 22 : 0;
+      resize();
+    },
     onFrame(callback) {
       callbacks.push(callback);
     },

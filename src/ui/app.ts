@@ -21,14 +21,23 @@ import {
   placeBid,
   playCard,
 } from '../engine';
+import { type Gender, type Skin, randomSkin } from '../three/character';
+import { Players } from '../three/players';
 import type { Stage } from '../three/stage';
 import { SEATS } from '../three/table';
 import { tableStateFromGame } from '../three/tableState';
 import { TableView } from '../three/tableView';
 import { TurnMarker } from '../three/turnMarker';
+import { displayName, loadProfile, saveProfile } from './profile';
 import { type UiState, HUMAN, appHtml } from './view';
 
-const SAVE_KEY = 'painted-seven-save-v2';
+/** Сохранённая партия: состояние движка и внешний вид игроков за столом. */
+interface SavedTable {
+  game: GameState;
+  skins: (Skin | null)[];
+}
+
+const SAVE_KEY = 'painted-seven-save-v3';
 const SETTINGS_KEY = 'painted-seven-settings-v2';
 
 // Паузы, чтобы человек успевал следить за игрой (в миллисекундах).
@@ -62,13 +71,16 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     screen: 'menu',
     game: null,
     settings: { ...DEFAULT_SETTINGS, ...(load<Partial<RuleSettings>>(SETTINGS_KEY) ?? {}) },
-    hasSave: load<GameState>(SAVE_KEY) !== null,
+    hasSave: load<SavedTable>(SAVE_KEY) !== null,
+    profile: loadProfile(),
     modal: { kind: 'none' },
     selected: null,
     dealing: false,
   };
   const table = new TableView(stage);
   const marker = new TurnMarker(stage);
+  const players = new Players(stage);
+  let skins: (Skin | null)[] = [];
 
   /** Номер «запуска» игры. Меняется при выходе в меню — старые таймеры это видят и молчат. */
   let session = 0;
@@ -94,6 +106,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     });
     const active = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
     marker.show(ui.screen === 'game' ? active : null);
+    players.lookAtSeat(active);
   }
 
   /** Таблички соперников стоят над их креслами: считаем место на экране каждый кадр. */
@@ -103,7 +116,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       const seat = Number(plate.dataset.seat);
       if (seat === 0) return;
       const spot = SEATS[seat];
-      const point = stage.toScreen(anchor.set(spot.x * 0.94, 4.1, spot.z * 0.94));
+      const point = stage.toScreen(anchor.set(spot.x, 5.2, spot.z));
       // Не даём табличке уйти за край экрана.
       const half = plate.offsetWidth / 2 + 6;
       const x = Math.min(Math.max(point.x, half), root.clientWidth - half);
@@ -116,7 +129,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   function save(): void {
     const game = ui.game;
     if (!game) return;
-    store(SAVE_KEY, game.phase === 'gameOver' ? null : game);
+    store(SAVE_KEY, game.phase === 'gameOver' ? null : ({ game, skins } satisfies SavedTable));
     ui.hasSave = game.phase !== 'gameOver';
   }
 
@@ -155,12 +168,14 @@ export function startApp(root: HTMLElement, stage: Stage): void {
           await sleep(BOT_DELAY);
           if (!alive()) break;
           const move = chooseMove(game, game.turn);
+          players.throwCard(game.turn);
           playCard(game, game.turn, move.card, move.joker);
         } else if (game.phase === 'trickEnd') {
           // Даём рассмотреть взятку (нажатие на стол ускоряет), потом она улетает к победителю.
           await Promise.race([sleep(TRICK_DELAY), new Promise<void>((resolve) => (skipTrickWait = resolve))]);
           skipTrickWait = null;
           if (!alive()) break;
+          players.nod(game.trickWinner ?? 0);
           await table.collectTrick(game.trickWinner ?? 0);
           if (!alive()) break;
           finishTrick(game);
@@ -229,7 +244,9 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     act(() => playCard(game, HUMAN, card, { mode, demand }));
   }
 
-  function startGame(game: GameState): void {
+  function startGame(game: GameState, tableSkins: (Skin | null)[]): void {
+    skins = tableSkins;
+    players.seat(skins);
     session++;
     working = false;
     ui.game = game;
@@ -243,11 +260,18 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     const game = ui.game;
     switch (action) {
       case 'start':
-        startGame(createGame({ settings: ui.settings }));
+        {
+          // Пока имена ботов постоянные, пол персонажей им соответствует.
+          const genders: Gender[] = ['female', 'male', 'female'];
+          startGame(
+            createGame({ settings: ui.settings, playerNames: [displayName(ui.profile), 'Аня', 'Борис', 'Вера'] }),
+            [null, ...genders.map((gender) => randomSkin(gender))],
+          );
+        }
         break;
       case 'continue': {
-        const saved = load<GameState>(SAVE_KEY);
-        if (saved) startGame(saved);
+        const saved = load<SavedTable>(SAVE_KEY);
+        if (saved) startGame(saved.game, saved.skins);
         break;
       }
       case 'to-menu':
@@ -258,6 +282,26 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         marker.show(null);
         render();
         break;
+      case 'open-wardrobe':
+        ui.screen = 'wardrobe';
+        players.showWardrobe(ui.profile.skin);
+        render();
+        break;
+      case 'close-wardrobe':
+        ui.screen = 'menu';
+        players.showWardrobe(null);
+        render();
+        break;
+      case 'skin': {
+        // value вида «tie:3» или «gender:female».
+        const [key, raw] = value.split(':');
+        const skin = { ...ui.profile.skin, [key]: key === 'gender' ? raw : Number(raw) } as Skin;
+        ui.profile = { ...ui.profile, skin };
+        saveProfile(ui.profile);
+        players.showWardrobe(skin);
+        render();
+        break;
+      }
       case 'open-rules':
       case 'open-sheet':
       case 'open-quit':
@@ -318,6 +362,14 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       render();
       syncTable();
     }
+  });
+
+  // Имя игрока в «Гардеробе».
+  root.addEventListener('input', (event) => {
+    const element = event.target as HTMLInputElement;
+    if (element.dataset?.profile !== 'name') return;
+    ui.profile = { ...ui.profile, name: element.value };
+    saveProfile(ui.profile);
   });
 
   // Настройки правил в меню.
