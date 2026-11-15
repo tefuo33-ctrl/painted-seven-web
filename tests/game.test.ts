@@ -16,7 +16,7 @@ import {
   dealCards,
   finishTrick,
   isJoker,
-  jokerOptionsFor,
+  jokerDemandsFor,
   legalCardsFor,
   nextRandom,
   nextRound,
@@ -69,16 +69,12 @@ describe('Колода и раздача', () => {
     expect(new Set(cut.map(cardLabel)).size).toBe(36);
   });
 
-  it('T-44: штраф за пропущенный срез', () => {
-    const game = createGame({ seed: 5, firstDealer: 0, settings: { cutPenalty: 10 } });
-    dealCards(game, false);
-    expect(game.penalties).toEqual([-10, 0, 0, 0]);
-    playRound(game);
-    expect(game.sheet[0].cells[0].penalty).toBe(-10);
-
-    const off = createGame({ seed: 5, firstDealer: 0 });
-    dealCards(off, false);
-    expect(off.penalties).toEqual([0, 0, 0, 0]);
+  it('T-44: среза в цифровой игре нет — раздача идёт сразу и без штрафов', () => {
+    const game = createGame({ seed: 5, firstDealer: 0 });
+    expect(game.phase).toBe('deal');
+    dealCards(game);
+    expect(game.phase).toBe('bidding');
+    expect(game.hands.map((h) => h.length)).toEqual([1, 1, 1, 1]);
   });
 
   it('T-45: козырь — верхняя карта остатка или последняя карта раздающего', () => {
@@ -174,10 +170,10 @@ function playRandomCard(game: GameState, random: { seed: number }): void {
     playCard(game, game.turn, card);
     return;
   }
-  const options = jokerOptionsFor(game, game.turn);
-  const option = options[Math.floor(nextRandom(random) * options.length)];
-  const target = option.targets[Math.floor(nextRandom(random) * option.targets.length)];
-  playCard(game, game.turn, card, { mode: option.mode, target });
+  const demands = [undefined, ...jokerDemandsFor(game)];
+  const mode = nextRandom(random) > 0.5 ? 'high' : 'low';
+  const demand = demands[Math.floor(nextRandom(random) * demands.length)];
+  playCard(game, game.turn, card, { mode, demand });
 }
 
 function playWholeGame(seed: number, random: boolean): GameState {

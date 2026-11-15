@@ -10,9 +10,8 @@ import {
   allowedBids,
   currentRound,
   isJoker,
-  jokerOptionsFor,
+  jokerDemandsFor,
   legalCardsFor,
-  totals,
   trickWinner,
 } from '../engine';
 
@@ -100,28 +99,23 @@ function byPower(trump: Suit | null) {
 /** Побеждает ли эта карта, если положить её сейчас (джокер считаем «сильным»). */
 function winsNow(state: GameState, player: number, card: Card): boolean {
   const plays: Play[] = [...state.trick, { player, card }];
-  return trickWinner(plays, state.trump, state.settings) === player;
+  return trickWinner(plays, state.trump) === player;
 }
 
 /** Выбор режима джокера. `takeTrick` — хочет ли бот забрать взятку. */
-function chooseJoker(state: GameState, player: number, takeTrick: boolean): JokerChoice {
-  const options = jokerOptionsFor(state, player);
-  const requestTakes = state.settings.jokerRequestStrength === 'high';
-  const mode = currentRound(state).mode;
+function chooseJoker(state: GameState, takeTrick: boolean): JokerChoice {
+  const choice: JokerChoice = { mode: takeTrick ? 'high' : 'low' };
+  const demands = jokerDemandsFor(state);
+  if (demands.length === 0) return choice; // не заход — требовать нечего
 
-  // Просьба подходит, только если она даёт нужный результат со взяткой.
-  if (requestTakes === takeTrick) {
-    const wantedMode =
-      takeTrick && state.trump !== null && mode !== 'plus' ? 'askTrump' : 'askStrongest';
-    const option = options.find((o) => o.mode === wantedMode);
-    if (option && option.targets.length > 0) {
-      // Просим у лидера по очкам.
-      const scores = totals(state);
-      const target = option.targets.reduce((best, p) => (scores[p] > scores[best] ? p : best));
-      return { mode: wantedMode, target };
-    }
+  const mode = currentRound(state).mode;
+  if (takeTrick && demands.includes('trump') && mode !== 'plus') {
+    choice.demand = 'trump'; // забираем взятку и выбиваем у всех козыри
+  } else {
+    // Пусть все сбросят крупные карты: потом легче взять своё или не взять лишнего.
+    choice.demand = 'strongest';
   }
-  return { mode: takeTrick ? 'high' : 'low' };
+  return choice;
 }
 
 export function chooseMove(state: GameState, player: number): BotMove {
@@ -135,7 +129,7 @@ export function chooseMove(state: GameState, player: number): BotMove {
 
   const playJoker = (takeTrick: boolean): BotMove => ({
     card: joker!,
-    joker: chooseJoker(state, player, takeTrick),
+    joker: chooseJoker(state, takeTrick),
   });
 
   // В руке только джокер.

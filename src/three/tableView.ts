@@ -324,6 +324,21 @@ export class TableView {
     }
   }
 
+  /** Какая карта моей руки находится под точкой экрана (или null). */
+  pick(clientX: number, clientY: number): string | null {
+    const rect = this.stage.canvas.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(pointer, this.stage.camera);
+    const mine = new Set((this.state?.hands[0] ?? []).map((card) => (card ? `c:${cardLabel(card)}` : '')));
+    const meshes = this.cards.filter((card) => card.mesh.visible && mine.has(card.key)).map((card) => card.mesh);
+    const hit = raycaster.intersectObjects(meshes, false)[0];
+    return hit ? (hit.object.userData.card3d as Card3D).key.slice(2) : null;
+  }
+
   /** Есть ли карты в полёте. */
   get busy(): boolean {
     return this.cards.some((card) => card.mesh.visible && card.moving) || this.trumpCard.moving;

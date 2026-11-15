@@ -7,20 +7,23 @@ import {
   type Play,
   DEFAULT_SETTINGS,
   cardLabel,
-  jokerOptions,
+  createGame,
+  dealCards,
+  isJoker,
+  jokerDemands,
   legalCards,
   parseCard,
   parseCards,
+  placeBid,
+  playCard,
   requestedCards,
   trickWinner,
 } from '../src/engine';
 
-const JOKER = parseCard('7♠');
-
 function plays(text: string, joker?: JokerChoice): Play[] {
   return parseCards(text).map((card, i) => {
     const play: Play = { player: i, card };
-    if (card.suit === 'spades' && card.rank === 7 && joker) play.joker = joker;
+    if (isJoker(card) && joker) play.joker = joker;
     return play;
   });
 }
@@ -60,7 +63,7 @@ describe('Режим «самая сильная»', () => {
     expect(trickWinner(plays('7♠ ♦Т ♦К ♥Т', { mode: 'high' }), 'diamonds')).toBe(0);
   });
 
-  it('T-15: после захода сильным джокером остальные кладут любую карту', () => {
+  it('T-15: после захода сильным джокером без требования остальные кладут любую карту', () => {
     const result = legalCards({
       hand: parseCards('♥6 ♥К ♣8'),
       plays: plays('7♠ ♥10', { mode: 'high' }),
@@ -100,76 +103,65 @@ describe('Режим «самая слабая»', () => {
   });
 });
 
-describe('Режимы «попросить карту»', () => {
-  it('попросить козырь: соперник обязан положить старший козырь, даже имея масть', () => {
-    const trick = plays('♥10 7♠', { mode: 'askTrump', target: 2 });
-    const result = legalCards({
-      hand: parseCards('♥6 ♦9 ♦К ♣Т'),
-      plays: trick,
-      trump: 'diamonds',
-      player: 2,
-    });
+describe('Заход с джокера: требование ко всем остальным', () => {
+  it('потребовать козырь: каждый обязан положить свой старший козырь', () => {
+    const trick = plays('7♠ ♦6', { mode: 'high', demand: 'trump' });
+    const result = legalCards({ hand: parseCards('♥6 ♦9 ♦К ♣Т'), plays: trick, trump: 'diamonds' });
     expect(labels(result)).toEqual(['К♦']);
   });
 
-  it('попросить козырь, а козырей нет — действуют обычные правила', () => {
-    const trick = plays('♥10 7♠', { mode: 'askTrump', target: 2 });
-    const result = legalCards({
-      hand: parseCards('♥6 ♣Т'),
-      plays: trick,
-      trump: 'diamonds',
-      player: 2,
-    });
-    expect(labels(result)).toEqual(['6♥']);
+  it('потребовали козырь, а козырей нет — любая карта', () => {
+    const trick = plays('7♠', { mode: 'high', demand: 'trump' });
+    const result = legalCards({ hand: parseCards('♥6 ♣Т'), plays: trick, trump: 'diamonds' });
+    expect(labels(result)).toEqual(['6♥', 'Т♣']);
   });
 
-  it('просьба касается только названного игрока', () => {
-    const trick = plays('♥10 7♠', { mode: 'askTrump', target: 3 });
-    const result = legalCards({
-      hand: parseCards('♥6 ♦К'),
-      plays: trick,
-      trump: 'diamonds',
-      player: 2,
-    });
-    expect(labels(result)).toEqual(['6♥']);
+  it('потребовать самую сильную: старший козырь, а без козырей — старший ранг', () => {
+    expect(labels(requestedCards(parseCards('♥Т ♦6 ♦9'), 'strongest', 'diamonds'))).toEqual(['9♦']);
+    expect(labels(requestedCards(parseCards('♥Т ♣К ♣6'), 'strongest', 'diamonds'))).toEqual(['Т♥']);
+    expect(labels(requestedCards(parseCards('♥Т ♣Т ♣6'), 'strongest', null))).toEqual(['Т♣', 'Т♥']);
   });
 
-  it('самая сильная карта: старший козырь, а без козырей — старший ранг', () => {
-    expect(labels(requestedCards(parseCards('♥Т ♦6 ♦9'), 'askStrongest', 'diamonds'))).toEqual(['9♦']);
-    expect(labels(requestedCards(parseCards('♥Т ♣К ♣6'), 'askStrongest', 'diamonds'))).toEqual(['Т♥']);
-    expect(labels(requestedCards(parseCards('♥Т ♣Т ♣6'), 'askStrongest', null))).toEqual(['Т♣', 'Т♥']);
+  it('потребовать самую слабую: младшая некозырная, а если одни козыри — младший козырь', () => {
+    expect(labels(requestedCards(parseCards('♥8 ♦6 ♣К'), 'weakest', 'diamonds'))).toEqual(['8♥']);
+    expect(labels(requestedCards(parseCards('♦6 ♦9'), 'weakest', 'diamonds'))).toEqual(['6♦']);
   });
 
-  it('самая слабая карта: младшая некозырная, а если одни козыри — младший козырь', () => {
-    expect(labels(requestedCards(parseCards('♥8 ♦6 ♣К'), 'askWeakest', 'diamonds'))).toEqual(['8♥']);
-    expect(labels(requestedCards(parseCards('♦6 ♦9'), 'askWeakest', 'diamonds'))).toEqual(['6♦']);
+  it('требование действует на всех трёх соперников', () => {
+    const trick = plays('7♠ ♥Т ♣Т', { mode: 'high', demand: 'strongest' });
+    const result = legalCards({ hand: parseCards('♥6 ♠К ♣7'), plays: trick, trump: null });
+    expect(labels(result)).toEqual(['К♠']);
   });
 
-  it('по умолчанию джокер с просьбой забирает взятку; настройкой — не забирает', () => {
-    const trick = plays('♥Т 7♠ ♦Т ♥6', { mode: 'askStrongest', target: 2 });
-    expect(trickWinner(trick, 'diamonds')).toBe(1);
-    const lowSettings = { ...DEFAULT_SETTINGS, jokerRequestStrength: 'low' as const };
-    expect(trickWinner(trick, 'diamonds', lowSettings)).toBe(2);
+  it('слабый джокер с требованием взятку не берёт, сильный — берёт', () => {
+    const low = plays('7♠ ♦Т ♥Т ♥6', { mode: 'low', demand: 'strongest' });
+    expect(trickWinner(low, 'diamonds')).toBe(1);
+    const high = plays('7♠ ♦Т ♥Т ♥6', { mode: 'high', demand: 'strongest' });
+    expect(trickWinner(high, 'diamonds')).toBe(0);
   });
 
-  it('просить можно только у тех, кто ещё не ходил', () => {
-    // Игрок 2 кладёт джокер третьим: не ходил только игрок 3.
-    const options = jokerOptions(plays('♥10 ♥6'), 2, 'diamonds');
-    expect(options.find((o) => o.mode === 'askTrump')?.targets).toEqual([3]);
-    // Джокер последним: просить некого, остаются «слабая» и «сильная».
-    const last = jokerOptions(plays('♥10 ♥6 ♥8'), 3, 'diamonds');
-    expect(last.map((o) => o.mode).sort()).toEqual(['high', 'low']);
+  it('требовать можно только на заходе; в «Без козыря» козырь потребовать нельзя', () => {
+    expect(jokerDemands([], 'hearts')).toEqual(['trump', 'strongest', 'weakest']);
+    expect(jokerDemands([], null)).toEqual(['strongest', 'weakest']);
+    expect(jokerDemands(plays('♥10'), 'hearts')).toEqual([]);
+    expect(jokerDemands([], 'hearts', { ...DEFAULT_SETTINGS, jokerRequests: false })).toEqual([]);
   });
 
-  it('в «Без козыря» попросить козырь нельзя; просьбы выключаются настройкой', () => {
-    const noTrump = jokerOptions([], 0, null);
-    expect(noTrump.some((o) => o.mode === 'askTrump')).toBe(false);
-    expect(noTrump.some((o) => o.mode === 'askStrongest')).toBe(true);
-    const off = jokerOptions([], 0, 'hearts', { ...DEFAULT_SETTINGS, jokerRequests: false });
-    expect(off).toHaveLength(2);
+  it('движок отклоняет требование, если джокер брошен не на заходе', () => {
+    const game = createGame({ seed: 1, firstDealer: 3 });
+    game.rounds = [{ mode: 'normal', cards: 9 }];
+    dealCards(game);
+    while (game.phase === 'bidding') placeBid(game, game.turn, 1);
+    // Кладём джокер в руку второго игрока вместо его первой карты.
+    const joker = parseCard('7♠');
+    for (const hand of game.hands) {
+      const index = hand.findIndex(isJoker);
+      if (index >= 0) hand[index] = game.hands[1][0];
+    }
+    game.hands[1][0] = joker;
+    playCard(game, 0, game.hands[0][0]);
+    expect(() => playCard(game, 1, joker, { mode: 'high', demand: 'trump' })).toThrow();
+    playCard(game, 1, joker, { mode: 'low' });
+    expect(game.trick[1].joker).toEqual({ mode: 'low' });
   });
-});
-
-it('в колоде ровно один джокер', () => {
-  expect(JOKER).toEqual({ suit: 'spades', rank: 7 });
 });

@@ -6,7 +6,7 @@
 // Менять состояние можно только функциями этого файла — они проверяют правила.
 
 import { type Card, type Suit, createDeck, isJoker, sameCard } from './cards';
-import { type Rng, cutDeck, deal, randomInt, shuffle } from './deck';
+import { type Rng, deal, randomInt, shuffle } from './deck';
 import {
   type RoundSpec,
   PLAYER_COUNT,
@@ -17,10 +17,9 @@ import {
 } from './rounds';
 import {
   type JokerChoice,
-  type JokerOption,
+  type JokerDemand,
   type Play,
-  isRequestMode,
-  jokerOptions,
+  jokerDemands,
   legalCards,
   trickWinner,
 } from './rules';
@@ -29,7 +28,7 @@ import { DEFAULT_SETTINGS, type RuleSettings } from './settings';
 
 /**
  * Фаза игры — чего игра сейчас ждёт:
- * deal      — раздающий должен раздать (и дать срезать);
+ * deal      — пора раздавать карты (dealCards);
  * bidding   — игрок `turn` должен сделать заказ;
  * playing   — игрок `turn` должен положить карту;
  * trickEnd  — взятка сыграна, её надо забрать (finishTrick);
@@ -42,11 +41,9 @@ export type Phase = 'deal' | 'bidding' | 'playing' | 'trickEnd' | 'roundEnd' | '
 export interface SheetCell {
   bid: number | null;
   tricks: number;
-  /** Очки за раунд (уже со штрафом). */
+  /** Очки за раунд. */
   points: number;
   star: boolean;
-  /** Штраф за пропущенный срез (0 или отрицательное число). */
-  penalty: number;
   /** Сумма очков с начала партии. */
   total: number;
 }
@@ -81,8 +78,6 @@ export interface GameState {
   trick: Play[];
   /** Кто забрал только что сыгранную взятку (в фазе trickEnd). */
   trickWinner: number | null;
-  /** Штрафы за срез в этом раунде. */
-  penalties: number[];
   sheet: SheetRow[];
 }
 
@@ -118,7 +113,6 @@ export function createGame(options: NewGameOptions = {}): GameState {
     taken: [],
     trick: [],
     trickWinner: null,
-    penalties: [],
     sheet: [],
   };
   startRound(state);
@@ -129,7 +123,7 @@ export function currentRound(state: GameState): RoundSpec {
   return state.rounds[state.roundIndex];
 }
 
-/** Сосед раздающего по часовой: он срезает, первым заказывает и первым заходит. */
+/** Сосед раздающего по часовой: он первым получает карту, первым заказывает и первым заходит. */
 export function firstPlayer(state: GameState): number {
   return next(state.dealer);
 }
@@ -144,26 +138,17 @@ function startRound(state: GameState): void {
   state.taken = Array.from({ length: PLAYER_COUNT }, () => 0);
   state.trick = [];
   state.trickWinner = null;
-  state.penalties = Array.from({ length: PLAYER_COUNT }, () => 0);
   state.turn = firstPlayer(state);
   // В «Тёмной» сначала заказ, потом раздача.
   state.phase = bidsBeforeDeal(round.mode) ? 'bidding' : 'deal';
 }
 
-/**
- * Раздача. `didCut` — дал ли раздающий срезать колоду.
- * `cutPosition` — где срезали (по умолчанию случайно).
- */
-export function dealCards(state: GameState, didCut = true, cutPosition?: number): void {
+/** Раздача: колода тасуется, карты раздаются по одной по часовой стрелке. */
+export function dealCards(state: GameState): void {
   if (state.phase !== 'deal') throw new Error('Сейчас нельзя раздавать');
   const round = currentRound(state);
 
-  let deck = shuffle(createDeck(), state.rng);
-  if (didCut) {
-    deck = cutDeck(deck, cutPosition ?? randomInt(state.rng, 4, deck.length - 4));
-  } else if (state.settings.cutPenalty > 0) {
-    state.penalties[state.dealer] = -state.settings.cutPenalty;
-  }
+  const deck = shuffle(createDeck(), state.rng);
 
   const result = deal(deck, PLAYER_COUNT, round.cards, state.dealer);
   state.hands = result.hands;
@@ -211,14 +196,13 @@ export function legalCardsFor(state: GameState, player: number): Card[] {
     hand: state.hands[player],
     plays: state.trick,
     trump: state.trump,
-    player,
     settings: state.settings,
   });
 }
 
-/** Режимы джокера, доступные игроку прямо сейчас. */
-export function jokerOptionsFor(state: GameState, player: number): JokerOption[] {
-  return jokerOptions(state.trick, player, state.trump, state.settings, PLAYER_COUNT);
+/** Что можно потребовать у остальных, кладя джокер прямо сейчас (только на заходе). */
+export function jokerDemandsFor(state: GameState): JokerDemand[] {
+  return jokerDemands(state.trick, state.trump, state.settings);
 }
 
 /** Игрок кладёт карту. Для джокера нужно передать выбранный режим. */
@@ -237,15 +221,13 @@ export function playCard(
   const play: Play = { player, card };
   if (isJoker(card)) {
     const choice = joker ?? { mode: 'high' };
-    const option = jokerOptionsFor(state, player).find((o) => o.mode === choice.mode);
-    if (!option) throw new Error('Этот режим джокера сейчас недоступен');
-    if (isRequestMode(choice.mode)) {
-      if (choice.target === undefined || !option.targets.includes(choice.target)) {
-        throw new Error('У этого игрока нельзя попросить карту');
+    if (choice.mode !== 'high' && choice.mode !== 'low') throw new Error('Неизвестный режим джокера');
+    play.joker = { mode: choice.mode };
+    if (choice.demand) {
+      if (!jokerDemandsFor(state).includes(choice.demand)) {
+        throw new Error('Требовать карту можно, только заходя с джокера');
       }
-      play.joker = { mode: choice.mode, target: choice.target };
-    } else {
-      play.joker = { mode: choice.mode };
+      play.joker.demand = choice.demand;
     }
   }
 
@@ -254,7 +236,7 @@ export function playCard(
   state.trick.push(play);
 
   if (state.trick.length === PLAYER_COUNT) {
-    state.trickWinner = trickWinner(state.trick, state.trump, state.settings);
+    state.trickWinner = trickWinner(state.trick, state.trump);
     state.phase = 'trickEnd';
   } else {
     state.turn = next(player);
@@ -286,14 +268,12 @@ function finishRound(state: GameState): void {
   for (let player = 0; player < PLAYER_COUNT; player++) {
     const bid = hasBidding(round.mode) ? state.bids[player] : null;
     const score = scoreRound(round.mode, bid, state.taken[player], state.settings);
-    const penalty = state.penalties[player];
-    const points = score.points + penalty;
+    const points = score.points;
     cells.push({
       bid,
       tricks: state.taken[player],
       points,
       star: score.star,
-      penalty,
       total: (previous ? previous.cells[player].total : 0) + points,
     });
   }

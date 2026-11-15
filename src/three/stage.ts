@@ -37,6 +37,10 @@ const VignetteShader = {
 export interface Stage {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
+  /** Холст, на котором рисуется сцена (для нажатий). */
+  canvas: HTMLCanvasElement;
+  /** Где на экране находится точка сцены: координаты в пикселях страницы. */
+  toScreen(point: THREE.Vector3): { x: number; y: number };
   /** Применить изменённые настройки из `gfx`. */
   applySettings(): void;
   /** Добавить функцию, которая вызывается каждый кадр (time и delta — в секундах). */
@@ -86,9 +90,11 @@ export function createStage(container: HTMLElement): Stage {
 
     const aspect = width / height;
     camera.aspect = aspect;
-    // t = 0 для широкого экрана, 1 для узкого вертикального.
-    const t = THREE.MathUtils.clamp((1.35 - aspect) / 0.85, 0, 1);
-    camera.fov = THREE.MathUtils.lerp(50, 74, t);
+    // Держим в кадре стол и боковых игроков: чем уже экран, тем шире угол обзора,
+    // а на вертикальном экране камера ещё и отходит назад и вверх.
+    const neededFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(39)) / aspect));
+    camera.fov = THREE.MathUtils.clamp(neededFov, 50, 76);
+    const t = (camera.fov - 50) / 26; // 0 — широкий экран, 1 — узкий вертикальный
     basePosition.set(0, THREE.MathUtils.lerp(7.2, 10.5, t), THREE.MathUtils.lerp(11, 14.5, t));
     lookAt.set(0, THREE.MathUtils.lerp(0.9, 0.6, t), THREE.MathUtils.lerp(-3.5, -2.5, t));
     camera.updateProjectionMatrix();
@@ -126,9 +132,19 @@ export function createStage(container: HTMLElement): Stage {
   applySettings();
   renderer.setAnimationLoop(frame);
 
+  const projected = new THREE.Vector3();
+
   return {
     scene,
     camera,
+    canvas: renderer.domElement,
+    toScreen(point) {
+      projected.copy(point).project(camera);
+      return {
+        x: ((projected.x + 1) / 2) * container.clientWidth,
+        y: ((1 - projected.y) / 2) * container.clientHeight,
+      };
+    },
     applySettings,
     onFrame(callback) {
       callbacks.push(callback);

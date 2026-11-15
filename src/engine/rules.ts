@@ -4,17 +4,16 @@
 import { type Card, type Suit, isJoker } from './cards';
 import { DEFAULT_SETTINGS, type RuleSettings } from './settings';
 
-/**
- * Режимы джокера (7♠):
- * high — самая сильная, low — самая слабая,
- * askTrump / askStrongest / askWeakest — попросить у игрока козырь / сильнейшую / слабейшую карту.
- */
-export type JokerMode = 'high' | 'low' | 'askTrump' | 'askStrongest' | 'askWeakest';
+/** Сила джокера (7♠): high — самая сильная карта, low — самая слабая. */
+export type JokerMode = 'high' | 'low';
+
+/** Что можно потребовать у остальных, заходя с джокера. */
+export type JokerDemand = 'trump' | 'strongest' | 'weakest';
 
 export interface JokerChoice {
   mode: JokerMode;
-  /** У кого просят карту (только для режимов ask…). */
-  target?: number;
+  /** Требование ко всем остальным игрокам (только при заходе с джокера). */
+  demand?: JokerDemand;
 }
 
 /** Одна карта, положенная во взятку. */
@@ -25,18 +24,9 @@ export interface Play {
   joker?: JokerChoice;
 }
 
-export function isRequestMode(mode: JokerMode): boolean {
-  return mode === 'askTrump' || mode === 'askStrongest' || mode === 'askWeakest';
-}
-
 /** Берёт ли джокер взятку при таком выборе. */
-export function jokerStrength(
-  choice: JokerChoice | undefined,
-  settings: RuleSettings = DEFAULT_SETTINGS,
-): 'high' | 'low' {
-  if (!choice || choice.mode === 'high') return 'high';
-  if (choice.mode === 'low') return 'low';
-  return settings.jokerRequestStrength;
+export function jokerStrength(choice: JokerChoice | undefined): JokerMode {
+  return choice?.mode ?? 'high';
 }
 
 /** Масть взятки — масть первой обычной карты (джокер масти не задаёт). */
@@ -54,25 +44,22 @@ function minRank(cards: Card[]): number {
 }
 
 /**
- * Какие карты обязан положить игрок, у которого джокером попросили карту.
- * Пустой список значит «просьбу выполнить нечем» — тогда действуют обычные правила.
+ * Какие карты обязан положить игрок по требованию джокера.
+ * Пустой список значит «выполнить нечем» — тогда действуют обычные правила.
  */
-export function requestedCards(hand: Card[], mode: JokerMode, trump: Suit | null): Card[] {
+export function requestedCards(hand: Card[], demand: JokerDemand, trump: Suit | null): Card[] {
   const cards = hand.filter((c) => !isJoker(c));
   const trumps = cards.filter((c) => c.suit === trump);
   const others = cards.filter((c) => c.suit !== trump);
-  if (mode === 'askTrump') {
+  if (demand === 'trump') {
     return trumps.filter((c) => c.rank === maxRank(trumps));
   }
-  if (mode === 'askStrongest') {
+  if (demand === 'strongest') {
     if (trumps.length > 0) return trumps.filter((c) => c.rank === maxRank(trumps));
     return others.filter((c) => c.rank === maxRank(others));
   }
-  if (mode === 'askWeakest') {
-    if (others.length > 0) return others.filter((c) => c.rank === minRank(others));
-    return trumps.filter((c) => c.rank === minRank(trumps));
-  }
-  return [];
+  if (others.length > 0) return others.filter((c) => c.rank === minRank(others));
+  return trumps.filter((c) => c.rank === minRank(trumps));
 }
 
 export interface LegalContext {
@@ -81,8 +68,6 @@ export interface LegalContext {
   plays: Play[];
   /** Козырь или null, если козыря нет. */
   trump: Suit | null;
-  /** Номер игрока — нужен, только чтобы понять, просили ли у него карту джокером. */
-  player?: number;
   settings?: RuleSettings;
 }
 
@@ -94,21 +79,15 @@ export function legalCards(ctx: LegalContext): Card[] {
   // Заход: любая карта.
   if (plays.length === 0) return hand.slice();
 
-  // У этого игрока джокером попросили карту — он обязан её отдать.
-  const jokerPlay = plays.find((p) => isJoker(p.card));
-  if (
-    jokerPlay?.joker &&
-    isRequestMode(jokerPlay.joker.mode) &&
-    ctx.player !== undefined &&
-    jokerPlay.joker.target === ctx.player
-  ) {
-    const requested = requestedCards(hand, jokerPlay.joker.mode, trump);
-    if (requested.length > 0) return requested;
-  }
-
-  // Зашли с джокера, который забирает взятку: остальные кладут что хотят.
-  if (isJoker(plays[0].card) && jokerStrength(plays[0].joker, settings) === 'high') {
-    return hand.slice();
+  const first = plays[0];
+  if (isJoker(first.card)) {
+    // Зашли с джокера и что-то потребовали — каждый обязан положить именно это.
+    if (first.joker?.demand && settings.jokerRequests) {
+      const requested = requestedCards(hand, first.joker.demand, trump);
+      if (requested.length > 0) return requested;
+    }
+    // Джокер забирает взятку: остальные кладут что хотят.
+    if (jokerStrength(first.joker) === 'high') return hand.slice();
   }
 
   const suit = leadSuit(plays);
@@ -132,14 +111,8 @@ export function legalCards(ctx: LegalContext): Card[] {
  * Работает и для неполной взятки («кто побеждает прямо сейчас»).
  * Если на столе только «слабый» джокер, победителя ещё нет — вернёт -1.
  */
-export function trickWinner(
-  plays: Play[],
-  trump: Suit | null,
-  settings: RuleSettings = DEFAULT_SETTINGS,
-): number {
-  const strongJoker = plays.find(
-    (p) => isJoker(p.card) && jokerStrength(p.joker, settings) === 'high',
-  );
+export function trickWinner(plays: Play[], trump: Suit | null): number {
+  const strongJoker = plays.find((p) => isJoker(p.card) && jokerStrength(p.joker) === 'high');
   if (strongJoker) return strongJoker.player;
 
   const normal = plays.filter((p) => !isJoker(p.card));
@@ -163,37 +136,12 @@ export function trickWinner(
   return best.player;
 }
 
-export interface JokerOption {
-  mode: JokerMode;
-  /** Игроки, у которых можно попросить карту (пусто для high / low). */
-  targets: number[];
-}
-
-/** Какие режимы джокера доступны игроку прямо сейчас. */
-export function jokerOptions(
+/** Что можно потребовать, кладя джокер прямо сейчас (не на заходе — ничего). */
+export function jokerDemands(
   plays: Play[],
-  player: number,
   trump: Suit | null,
   settings: RuleSettings = DEFAULT_SETTINGS,
-  playerCount = 4,
-): JokerOption[] {
-  const options: JokerOption[] = [
-    { mode: 'low', targets: [] },
-    { mode: 'high', targets: [] },
-  ];
-  if (!settings.jokerRequests) return options;
-
-  // Просить можно только у тех, кто ещё не положил карту в эту взятку.
-  const played = new Set(plays.map((p) => p.player));
-  const targets: number[] = [];
-  for (let step = 1; step < playerCount; step++) {
-    const other = (player + step) % playerCount;
-    if (!played.has(other)) targets.push(other);
-  }
-  if (targets.length === 0) return options;
-
-  if (trump !== null) options.push({ mode: 'askTrump', targets });
-  options.push({ mode: 'askStrongest', targets });
-  options.push({ mode: 'askWeakest', targets });
-  return options;
+): JokerDemand[] {
+  if (plays.length > 0 || !settings.jokerRequests) return [];
+  return trump !== null ? ['trump', 'strongest', 'weakest'] : ['strongest', 'weakest'];
 }

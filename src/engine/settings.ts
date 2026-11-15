@@ -16,14 +16,10 @@ export interface RuleSettings {
   /** Очки за взятку в «Минусах» (отрицательное) и «Плюсах». */
   minusPerTrick: number;
   plusPerTrick: number;
-  /** Штраф за пропущенный срез: 0 (выкл.), 10 или 20. */
-  cutPenalty: 0 | 10 | 20;
   /** Запрет: сумма всех заказов не может равняться числу карт (ограничивает последнего). */
   forbidSumEqualsCards: boolean;
-  /** Разрешены ли режимы джокера «попросить карту». */
+  /** Можно ли, заходя с джокера, потребовать у остальных карту. */
   jokerRequests: boolean;
-  /** Джокер с просьбой: 'high' — забирает взятку, 'low' — не забирает. */
-  jokerRequestStrength: 'high' | 'low';
   /** Длина партии: полная (28 раундов) или короткая (7 раундов для знакомства). */
   gameLength: 'full' | 'short';
 }
@@ -35,9 +31,7 @@ export const DEFAULT_SETTINGS: RuleSettings = {
   plusStarPenalty: -50,
   minusPerTrick: -20,
   plusPerTrick: 20,
-  cutPenalty: 0,
   forbidSumEqualsCards: false,
   jokerRequests: true,
-  jokerRequestStrength: 'high',
   gameLength: 'full',
 };
