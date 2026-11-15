@@ -21,7 +21,10 @@ import {
   placeBid,
   playCard,
 } from '../engine';
-import { type Gender, type Skin, randomSkin } from '../three/character';
+import { type Net, clientId, connect, serverUrl } from '../net/client';
+import type { ServerMessage } from '../net/protocol';
+import { pickBotNames } from '../shared/names';
+import { type Skin, randomGender, randomSkin } from '../three/character';
 import { Players } from '../three/players';
 import type { Stage } from '../three/stage';
 import { SEATS } from '../three/table';
@@ -76,6 +79,9 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     modal: { kind: 'none' },
     selected: null,
     dealing: false,
+    online: null,
+    joinCode: (new URLSearchParams(location.search).get('room') ?? '').toUpperCase().slice(0, 5),
+    linkCopied: false,
   };
   const table = new TableView(stage);
   const marker = new TurnMarker(stage);
@@ -128,7 +134,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
 
   function save(): void {
     const game = ui.game;
-    if (!game) return;
+    if (!game || ui.online) return; // партию с друзьями хранит сервер
     store(SAVE_KEY, game.phase === 'gameOver' ? null : ({ game, skins } satisfies SavedTable));
     ui.hasSave = game.phase !== 'gameOver';
   }
@@ -200,6 +206,140 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     for (let i = 0; i < 200 && table.busy; i++) await sleep(50);
   }
 
+  // ---------- Игра с друзьями (через сервер) ----------
+
+  let net: Net | null = null;
+  /** Состояния от сервера обрабатываем строго по очереди, чтобы успевали анимации. */
+  const incoming: GameState[] = [];
+  let processing = false;
+
+  function lobbyError(message: string): void {
+    ui.online = { status: 'ready', code: null, seats: [], host: false, started: false, ...(ui.online ?? {}), error: message };
+    ui.online.status = 'ready';
+    render();
+  }
+
+  async function ensureNet(): Promise<Net | null> {
+    if (net) return net;
+    const url = serverUrl();
+    if (!url) {
+      lobbyError('Сервер для игры с друзьями ещё не подключён. Как его запустить — в README.');
+      return null;
+    }
+    ui.online = { status: 'connecting', code: null, seats: [], host: false, started: false, error: null };
+    render();
+    try {
+      net = await connect(url, { onMessage: onServerMessage, onClose: onServerClose });
+      return net;
+    } catch {
+      lobbyError('Не удалось подключиться к серверу. Проверьте интернет и попробуйте ещё раз.');
+      return null;
+    }
+  }
+
+  function onServerClose(): void {
+    net = null;
+    if (!ui.online) return;
+    const code = ui.online.code;
+    leaveOnline();
+    ui.screen = 'lobby';
+    ui.joinCode = code ?? ui.joinCode;
+    lobbyError('Связь с сервером потеряна. Нажмите «Войти», чтобы вернуться в комнату.');
+  }
+
+  function onServerMessage(message: ServerMessage): void {
+    if (message.t === 'error') {
+      if (ui.screen === 'lobby') lobbyError(message.message);
+      else console.error(message.message);
+      return;
+    }
+    if (message.t === 'room') {
+      ui.online = {
+        status: 'ready',
+        code: message.code,
+        seats: message.seats,
+        host: message.host,
+        started: message.started,
+        error: null,
+      };
+      if (message.started) {
+        skins = message.seats.map((seat) => seat?.skin ?? null);
+        players.seat(skins);
+      }
+      if (ui.screen === 'lobby') render();
+      return;
+    }
+    incoming.push(message.game);
+    void processIncoming();
+  }
+
+  /** Показать очередное состояние от сервера, проиграв нужные анимации. */
+  async function processIncoming(): Promise<void> {
+    if (processing) return;
+    processing = true;
+    working = true;
+    const mySession = session;
+    try {
+      while (incoming.length > 0 && mySession === session) {
+        const next = incoming.shift()!;
+        const previous = ui.screen === 'game' ? ui.game : null;
+
+        // Взятка сыграна и на сервере уже забрана — показываем, как она улетает.
+        if (previous?.phase === 'trickEnd' && !(next.phase === 'trickEnd' && next.trick.length === 4)) {
+          players.nod(previous.trickWinner ?? 0);
+          await table.collectTrick(previous.trickWinner ?? 0);
+        }
+        if (previous && next.trick.length > previous.trick.length) {
+          players.throwCard(next.trick[next.trick.length - 1].player);
+        }
+        const dealtNow = next.dealt && (!previous || !previous.dealt || previous.roundIndex !== next.roundIndex);
+
+        ui.game = next;
+        ui.screen = 'game';
+        ui.selected = null;
+        if (next.phase !== 'roundEnd' && next.phase !== 'gameOver' && ui.modal.kind === 'none') ui.modal = { kind: 'none' };
+
+        if (next.phase === 'deal') {
+          ui.dealing = true;
+          render();
+          syncTable();
+          await table.shuffle();
+        } else if (dealtNow) {
+          ui.dealing = true;
+          render();
+          syncTable({ deal: true });
+          await waitForCards();
+          ui.dealing = false;
+          render();
+          syncTable();
+        } else {
+          ui.dealing = false;
+          render();
+          syncTable();
+        }
+      }
+    } finally {
+      processing = false;
+      if (mySession === session) {
+        working = false;
+        render();
+        syncTable();
+      }
+    }
+  }
+
+  function leaveOnline(): void {
+    net?.send({ t: 'leave' });
+    net?.close();
+    net = null;
+    incoming.length = 0;
+    ui.online = null;
+    session++;
+    working = false;
+  }
+
+  // ---------- Действия человека ----------
+
   /** Действие человека: выполнить и продолжить партию. */
   function act(action: () => void): void {
     try {
@@ -233,6 +373,11 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       render();
       return;
     }
+    if (net) {
+      ui.selected = null;
+      net.send({ t: 'play', card });
+      return;
+    }
     act(() => playCard(game, HUMAN, card));
   }
 
@@ -241,6 +386,11 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     const card = game?.hands[HUMAN].find(isJoker);
     ui.modal = { kind: 'none' };
     if (!game || !card) return;
+    if (net) {
+      ui.selected = null;
+      net.send({ t: 'play', card, joker: { mode, demand } });
+      return;
+    }
     act(() => playCard(game, HUMAN, card, { mode, demand }));
   }
 
@@ -261,12 +411,14 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     switch (action) {
       case 'start':
         {
-          // Пока имена ботов постоянные, пол персонажей им соответствует.
-          const genders: Gender[] = ['female', 'male', 'female'];
-          startGame(
-            createGame({ settings: ui.settings, playerNames: [displayName(ui.profile), 'Аня', 'Борис', 'Вера'] }),
-            [null, ...genders.map((gender) => randomSkin(gender))],
-          );
+          // С каждой новой игрой у ботов новые имена и внешность; имя соответствует полу персонажа.
+          const genders = [randomGender(), randomGender(), randomGender()];
+          const myName = displayName(ui.profile);
+          const names = pickBotNames(genders, [myName]);
+          startGame(createGame({ settings: ui.settings, playerNames: [myName, ...names] }), [
+            null,
+            ...genders.map((gender) => randomSkin(gender)),
+          ]);
         }
         break;
       case 'continue': {
@@ -274,7 +426,55 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         if (saved) startGame(saved.game, saved.skins);
         break;
       }
+      case 'open-lobby':
+        ui.screen = 'lobby';
+        ui.online = null;
+        render();
+        break;
+      case 'leave-lobby':
+        leaveOnline();
+        ui.screen = 'menu';
+        render();
+        break;
+      case 'create-room':
+        void ensureNet().then((connection) =>
+          connection?.send({
+            t: 'create',
+            clientId: clientId(),
+            name: displayName(ui.profile),
+            skin: ui.profile.skin,
+            settings: ui.settings,
+          }),
+        );
+        break;
+      case 'join-room':
+        if (ui.joinCode.length < 5) {
+          lobbyError('Введите код комнаты из пяти символов.');
+          break;
+        }
+        void ensureNet().then((connection) =>
+          connection?.send({
+            t: 'join',
+            clientId: clientId(),
+            code: ui.joinCode,
+            name: displayName(ui.profile),
+            skin: ui.profile.skin,
+          }),
+        );
+        break;
+      case 'start-room':
+        net?.send({ t: 'start' });
+        break;
+      case 'copy-link': {
+        const link = root.querySelector<HTMLInputElement>('[data-room-link]')?.value ?? '';
+        void navigator.clipboard?.writeText(link).then(() => {
+          ui.linkCopied = true;
+          render();
+        });
+        break;
+      }
       case 'to-menu':
+        if (ui.online) leaveOnline();
         session++;
         working = false;
         ui.screen = 'menu';
@@ -313,7 +513,8 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         render();
         break;
       case 'bid':
-        if (game && !working) act(() => placeBid(game, HUMAN, Number(value)));
+        if (game && !working && net) net.send({ t: 'bid', bid: Number(value) });
+        else if (game && !working) act(() => placeBid(game, HUMAN, Number(value)));
         break;
       case 'joker-mode': {
         const mode = value as JokerMode;
@@ -333,7 +534,8 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         break;
       case 'next-round':
         ui.modal = { kind: 'none' };
-        if (game) act(() => nextRound(game));
+        if (net) net.send({ t: 'next' });
+        else if (game) act(() => nextRound(game));
         break;
       default:
         break;
@@ -367,6 +569,10 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   // Имя игрока в «Гардеробе».
   root.addEventListener('input', (event) => {
     const element = event.target as HTMLInputElement;
+    if (element.dataset?.joinCode !== undefined) {
+      ui.joinCode = element.value.toUpperCase().slice(0, 5);
+      return;
+    }
     if (element.dataset?.profile !== 'name') return;
     ui.profile = { ...ui.profile, name: element.value };
     saveProfile(ui.profile);
@@ -386,5 +592,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   // Для проверки из консоли браузера.
   Object.assign(window, { paintedSeven: { ui, table, tapCard, isWorking: () => working } });
 
+  // Открыли ссылку-приглашение (?room=КОД) — сразу показываем вход в комнату.
+  if (ui.joinCode) ui.screen = 'lobby';
   render();
 }

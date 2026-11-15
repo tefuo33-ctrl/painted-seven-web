@@ -192,6 +192,65 @@ body.scene-only #app {
   color: var(--ink-dim);
 }
 
+/* ---------- Игра с друзьями ---------- */
+
+.join-row {
+  display: flex;
+  gap: 6px;
+}
+
+.join-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 8px 10px;
+  min-height: 44px;
+  color: var(--ink);
+  background: var(--panel-solid);
+  border: 2px solid rgba(235, 230, 214, 0.3);
+  border-radius: 4px;
+  pointer-events: auto;
+}
+
+.join-row input[data-join-code] {
+  text-align: center;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-size: 20px;
+}
+
+.room-code {
+  margin: 0;
+  font-size: 44px;
+  letter-spacing: 0.25em;
+  color: var(--gold);
+  text-shadow: 3px 3px 0 #000;
+}
+
+.seat-list {
+  margin: 0;
+  padding: 8px 12px 8px 34px;
+  text-align: left;
+  background: var(--panel);
+  border-radius: 4px;
+}
+
+.seat-list li {
+  padding: 3px 0;
+}
+
+.seat-free {
+  color: var(--ink-dim);
+  font-weight: 400;
+}
+
+.error {
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(138, 28, 43, 0.85);
+  border-radius: 4px;
+}
+
 /* ---------- Гардероб ---------- */
 
 .wardrobe {

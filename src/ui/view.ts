@@ -24,6 +24,7 @@ import {
 } from '../engine';
 import { HAIR_FEMALE, SHIRTS, SUITS_MALE, TIES } from '../three/character';
 import { hex } from '../three/gfx';
+import type { SeatInfo } from '../net/protocol';
 import type { Profile } from './profile';
 
 export const HUMAN = 0;
@@ -36,8 +37,22 @@ export type Modal =
   | { kind: 'quit' }
   | { kind: 'joker'; mode: JokerMode | null };
 
+export interface OnlineState {
+  status: 'connecting' | 'ready';
+  code: string | null;
+  seats: (SeatInfo | null)[];
+  host: boolean;
+  started: boolean;
+  error: string | null;
+}
+
 export interface UiState {
-  screen: 'menu' | 'game' | 'wardrobe';
+  screen: 'menu' | 'game' | 'wardrobe' | 'lobby';
+  /** Игра с друзьями: состояние комнаты (null — играем одни против ботов). */
+  online: OnlineState | null;
+  /** Код комнаты, который человек вводит сам. */
+  joinCode: string;
+  linkCopied: boolean;
   game: GameState | null;
   profile: Profile;
   settings: RuleSettings;
@@ -91,9 +106,10 @@ function menuHtml(ui: UiState): string {
     <div class="menu-card">
       <h1>Расписной покер</h1>
       <p class="subtitle">Painted Seven</p>
-      <p class="lead">Вы против трёх ботов. Закажите взятки — и возьмите ровно столько.</p>
-      <button class="btn primary" data-action="start">Новая партия</button>
+      <p class="lead">Закажите взятки — и возьмите ровно столько.</p>
+      <button class="btn primary" data-action="start">Играть с ботами</button>
       ${ui.hasSave ? '<button class="btn" data-action="continue">Продолжить партию</button>' : ''}
+      <button class="btn" data-action="open-lobby">Играть с друзьями</button>
       <button class="btn" data-action="open-wardrobe">Гардероб</button>
       <button class="btn" data-action="open-rules">Правила коротко</button>
       <details class="settings">
@@ -167,6 +183,56 @@ function wardrobeHtml(ui: UiState): string {
     ${options}
     <button class="btn primary" data-action="close-wardrobe">Готово</button>
   </div>`;
+}
+
+// ---------- Игра с друзьями ----------
+
+function lobbyHtml(ui: UiState): string {
+  const online = ui.online;
+  const error = online?.error ? `<p class="error">${online.error}</p>` : '';
+  const back = '<button class="btn" data-action="leave-lobby">Назад в меню</button>';
+
+  if (!online?.code) {
+    // Ещё не в комнате: создать свою или войти по коду.
+    const busy = online?.status === 'connecting';
+    return `<div class="menu"><div class="menu-card">
+      <h1>Игра с друзьями</h1>
+      <p class="lead">Создайте игру и отправьте друзьям ссылку — или введите код, который прислали вам.</p>
+      ${error}
+      <button class="btn primary" data-action="create-room" ${busy ? 'disabled' : ''}>Создать игру</button>
+      <div class="join-row">
+        <input type="text" data-join-code maxlength="5" placeholder="КОД" value="${ui.joinCode}" autocomplete="off" autocapitalize="characters">
+        <button class="btn" data-action="join-room" ${busy ? 'disabled' : ''}>Войти</button>
+      </div>
+      ${busy ? '<p class="hint">Подключение к серверу…</p>' : ''}
+      ${back}
+    </div></div>`;
+  }
+
+  const seats = online.seats
+    .map((seat, index) => {
+      if (!seat) return '<li class="seat-free">свободно — займёт бот</li>';
+      const you = index === 0 ? ' <span class="badge">вы</span>' : '';
+      const off = seat.connected ? '' : ' (нет связи)';
+      return `<li>${seat.name}${you}${off}</li>`;
+    })
+    .join('');
+  const link = `${location.origin}${location.pathname}?room=${online.code}`;
+  const start = online.host
+    ? '<button class="btn primary" data-action="start-room">Начать игру</button>'
+    : '<p class="hint">Ждём, когда создатель комнаты начнёт игру…</p>';
+  return `<div class="menu"><div class="menu-card">
+    <h1>Комната</h1>
+    <p class="room-code" title="Код комнаты">${online.code}</p>
+    <div class="join-row">
+      <input type="text" readonly value="${link}" data-room-link>
+      <button class="btn" data-action="copy-link">${ui.linkCopied ? 'Скопировано' : 'Копировать'}</button>
+    </div>
+    <ol class="seat-list">${seats}</ol>
+    ${error}
+    ${start}
+    ${back}
+  </div></div>`;
 }
 
 // ---------- Игра ----------
@@ -402,7 +468,9 @@ function overlayHtml(ui: UiState): string {
     case 'quit':
       return modalHtml(
         'Меню',
-        '<p>Партия сохраняется автоматически — её можно продолжить позже.</p>',
+        ui.online
+          ? '<p>Если выйти, за вас будет ходить бот. Вернуться можно по той же ссылке.</p>'
+          : '<p>Партия сохраняется автоматически — её можно продолжить позже.</p>',
         `<button class="btn" data-action="open-rules">Правила</button>
          <button class="btn" data-action="to-menu">Выйти в меню</button>
          <button class="btn primary" data-action="close-modal">Вернуться к игре</button>`,
@@ -419,6 +487,7 @@ function overlayHtml(ui: UiState): string {
 
 export function appHtml(ui: UiState): string {
   if (ui.screen === 'wardrobe') return wardrobeHtml(ui);
+  if (ui.screen === 'lobby') return lobbyHtml(ui);
   if (ui.screen === 'menu' || !ui.game) return menuHtml(ui) + overlayHtml(ui);
   return hudHtml(ui, ui.game) + overlayHtml(ui);
 }
