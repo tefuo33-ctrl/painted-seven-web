@@ -8,17 +8,17 @@ export const gfx = {
   /** Качество: на «низком» выключены блум, виньетка и дрожание вершин, рендер мельче. */
   quality: 'high' as 'high' | 'low',
   sound: true,
-  /** Во сколько раз рендер меньше окна (2 — лёгкая пиксельность, 3 — крупные пиксели). */
-  pixelScale: 2,
+  /** Во сколько раз рендер меньше окна (1 — полная чёткость, 2–3 — заметные пиксели). */
+  pixelScale: 1,
   /** Сила дрожания вершин: 0 — выключено, 1 — как на PS1, больше — грубее. */
-  snapStrength: 1,
+  snapStrength: 0,
   bloom: true,
   bloomStrength: 0.45,
   /** Сила виньетки: 0 — выключена. */
   vignette: 0.5,
 };
 
-const GFX_KEY = 'painted-seven-gfx-v2';
+const GFX_KEY = 'painted-seven-gfx-v3';
 
 /** Загрузить сохранённые настройки картинки и звука. */
 export function loadGfx(): void {
@@ -129,6 +129,49 @@ export function flatVertexColors(doubleSide = false): THREE.MeshLambertMaterial 
 /** Светящийся материал: не зависит от освещения (огонь, окна, солнце). */
 export function glow(color: number, options: THREE.MeshBasicMaterialParameters = {}): THREE.MeshBasicMaterial {
   return retro(new THREE.MeshBasicMaterial({ color, ...options }));
+}
+
+const smoothCache = new Map<string, THREE.MeshPhongMaterial>();
+
+/**
+ * Гладкий материал с мягким блеском: дерево, кожа, ткань, кожа лица.
+ * `shine` — сила блика (0 — матовый).
+ */
+export function smooth(color: number, shine = 12, doubleSide = false): THREE.MeshPhongMaterial {
+  const key = `${color}:${shine}:${doubleSide}`;
+  let material = smoothCache.get(key);
+  if (!material) {
+    material = retro(
+      new THREE.MeshPhongMaterial({
+        color,
+        shininess: shine,
+        specular: shine > 0 ? 0x33291f : 0x000000,
+        side: doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+      }),
+    );
+    smoothCache.set(key, material);
+  }
+  return material;
+}
+
+/** Подробная текстура, нарисованная кодом: со сглаживанием, чтобы детали читались издалека. */
+export function paintedTexture(
+  width: number,
+  height: number,
+  draw: (ctx: CanvasRenderingContext2D, width: number, height: number) => void,
+): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d')!;
+  draw(ctx, width, height);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = 4;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 /** Маленькая текстура, нарисованная кодом, без сглаживания. */

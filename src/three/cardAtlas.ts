@@ -6,7 +6,7 @@ import { type Card, type Rank, type Suit, RANKS, SUITS, isJoker } from '../engin
 import { PALETTE, hex, pixelTexture } from './gfx';
 
 /** Во сколько раз текстура крупнее координат рисования (чем больше — тем чётче карты). */
-const ATLAS_SCALE = 2;
+const ATLAS_SCALE = 4;
 
 export const CELL_W = 64;
 export const CELL_H = 96;
@@ -296,8 +296,11 @@ export function getCardAtlas(): THREE.CanvasTexture {
     }
   });
   // Уменьшенные копии текстуры: далёкие карты не «искрят», но остаются пиксельными.
+  // Сглаживание и уменьшенные копии: ранг и масть читаются и вблизи, и на дальнем конце стола.
   texture.generateMipmaps = true;
-  texture.minFilter = THREE.NearestMipmapNearestFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = 8;
   atlas = texture;
   return texture;
 }

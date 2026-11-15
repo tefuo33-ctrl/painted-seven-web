@@ -1,8 +1,8 @@
-// Покерный стол и кресла. Единица длины — ширина одной карты.
+// Покерный стол, кресла и фишки. Единица длины — ширина одной карты.
 // Сукно лежит на высоте y = 0, пол террасы — на FLOOR_Y.
 
 import * as THREE from 'three';
-import { FacetBuilder, PALETTE, flat, flatVertexColors, hex, pixelTexture, retro } from './gfx';
+import { PALETTE, hex, paintedTexture, smooth } from './gfx';
 
 export const FELT_RADIUS = 4.8;
 export const TABLE_RADIUS = 5.85;
@@ -10,18 +10,12 @@ export const FLOOR_Y = -4.2;
 /** Расстояние от центра стола до кресла. */
 export const SEAT_DISTANCE = 8.0;
 
-/** Точка на окружности: восьмиугольник повёрнут так, что к камере обращена плоская сторона. */
-function corner(index: number, radius: number, y: number): THREE.Vector3 {
-  const angle = Math.PI / 8 + (index * Math.PI) / 4;
-  return new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
-}
+const SEGMENTS = 56;
 
-/** Тело вращения с восемью гранями — из него сделаны борт, царга и ножка стола. */
-function octagonal(profile: [number, number][], material: THREE.Material): THREE.Mesh {
+/** Тело вращения: из него сделаны борт, царга и ножка стола. */
+function turned(profile: [number, number][], material: THREE.Material, segments = SEGMENTS): THREE.Mesh {
   const points = profile.map(([radius, y]) => new THREE.Vector2(radius, y));
-  material.side = THREE.DoubleSide; // профиль может быть «вывернут» — рисуем обе стороны
-  const mesh = new THREE.Mesh(new THREE.LatheGeometry(points, 8), material);
-  mesh.rotation.y = Math.PI / 8 + Math.PI / 2;
+  const mesh = new THREE.Mesh(new THREE.LatheGeometry(points, segments), material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
@@ -30,93 +24,153 @@ function octagonal(profile: [number, number][], material: THREE.Material): THREE
 export function buildTable(): THREE.Group {
   const group = new THREE.Group();
 
-  // Сукно: восемь клиньев с чуть разным оттенком и тонкой линией-разметкой.
-  const feltTexture = pixelTexture(64, 64, (ctx, w, h) => {
-    ctx.fillStyle = '#ffffff';
+  // Сукно: мягкая ткань с ворсом, светлее к центру (свет фонаря), золотая линия-разметка.
+  const feltTexture = paintedTexture(512, 512, (ctx, w, h) => {
+    const gradient = ctx.createRadialGradient(w / 2, h / 2, 20, w / 2, h / 2, w / 2);
+    gradient.addColorStop(0, '#2f6a48');
+    gradient.addColorStop(0.6, '#235238');
+    gradient.addColorStop(1, '#183a28');
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = '#d9e6da';
-    // Мелкая «ворсистость» ткани.
-    for (let i = 0; i < 260; i++) ctx.fillRect((i * 37) % w, (i * 53) % h, 1, 1);
+    // Ворс ткани.
+    for (let i = 0; i < 9000; i++) {
+      const x = (i * 7919) % w;
+      const y = (i * 104729) % h;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.05)';
+      ctx.fillRect(x, y, 1, 2);
+    }
+    ctx.strokeStyle = 'rgba(217,180,74,0.55)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w * 0.375, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w * 0.36, 0, Math.PI * 2);
+    ctx.stroke();
   });
-  feltTexture.wrapS = feltTexture.wrapT = THREE.RepeatWrapping;
-  const felt = new FacetBuilder();
-  const center = new THREE.Vector3(0, 0, 0);
-  const shades = [PALETTE.felt, 0x23422f, PALETTE.felt, 0x1b3527];
-  for (let i = 0; i < 8; i++) {
-    felt.triangle(center, corner(i + 1, FELT_RADIUS, 0), corner(i, FELT_RADIUS, 0), shades[i % 4]);
-  }
-  const feltMesh = new THREE.Mesh(felt.build(), flatVertexColors());
-  feltMesh.receiveShadow = true;
-  group.add(feltMesh);
-
-  // Золотая линия-разметка на сукне.
-  const line = new THREE.Mesh(
-    new THREE.RingGeometry(3.55, 3.62, 8, 1),
-    retro(new THREE.MeshBasicMaterial({ color: PALETTE.goldDark, transparent: true, opacity: 0.55 })),
+  const felt = new THREE.Mesh(
+    new THREE.CircleGeometry(FELT_RADIUS + 0.05, SEGMENTS),
+    new THREE.MeshLambertMaterial({ map: feltTexture }),
   );
-  line.rotation.set(-Math.PI / 2, 0, Math.PI / 8);
-  line.position.y = 0.012;
-  group.add(line);
+  felt.rotation.x = -Math.PI / 2;
+  felt.receiveShadow = true;
+  group.add(felt);
 
-  // Деревянная окантовка с золотой инкрустацией, мягкий кожаный борт, царга.
-  const wood = flat(PALETTE.wood);
-  const darkWood = flat(PALETTE.woodDark);
-  group.add(octagonal([[FELT_RADIUS - 0.02, 0.0], [FELT_RADIUS + 0.05, 0.03], [5.0, 0.03]], flat(PALETTE.goldDark)));
-  group.add(octagonal([[5.0, 0.03], [5.02, 0.24], [5.28, 0.36], [5.6, 0.3], [TABLE_RADIUS, 0.05]], flat(0x3a1a18)));
+  // Золотая окантовка сукна, мягкий кожаный борт, царга из полированного дерева.
+  const wood = smooth(0x4a2a18, 40);
+  const darkWood = smooth(0x321c10, 40);
+  group.add(turned([[FELT_RADIUS, 0.0], [FELT_RADIUS + 0.04, 0.035], [5.0, 0.035]], smooth(PALETTE.goldDark, 60)));
   group.add(
-    octagonal([[TABLE_RADIUS, 0.05], [TABLE_RADIUS - 0.04, -0.3], [5.55, -0.52], [5.0, -0.66], [0.01, -0.66]], wood),
+    turned(
+      [[5.0, 0.035], [5.01, 0.2], [5.1, 0.33], [5.3, 0.4], [5.55, 0.37], [5.75, 0.24], [TABLE_RADIUS, 0.05]],
+      smooth(0x47201a, 26),
+    ),
   );
-  // Резная ножка-тумба.
   group.add(
-    octagonal(
-      [[1.05, -0.66], [1.45, -1.05], [0.85, -1.9], [0.8, -2.7], [1.3, -3.35], [2.5, -3.85], [2.75, FLOOR_Y + 0.02], [0.01, FLOOR_Y + 0.02]],
+    turned(
+      [[TABLE_RADIUS, 0.05], [TABLE_RADIUS - 0.03, -0.22], [5.72, -0.34], [5.74, -0.44], [5.5, -0.56], [5.0, -0.68], [0.01, -0.68]],
+      wood,
+    ),
+  );
+  // Точёная ножка-тумба с кольцами.
+  group.add(
+    turned(
+      [
+        [1.0, -0.68], [1.5, -0.92], [1.55, -1.05], [1.05, -1.3], [0.82, -1.9], [0.8, -2.5], [0.95, -2.75],
+        [0.9, -2.9], [1.25, -3.2], [2.1, -3.62], [2.55, -3.8], [2.7, -3.98], [2.72, FLOOR_Y + 0.02], [0.01, FLOOR_Y + 0.02],
+      ],
       darkWood,
+      32,
     ),
   );
   return group;
 }
 
-/** Классическое кресло с высокой спинкой. Сидящий смотрит в сторону -z. */
+/** Фигура спинки кресла: прямоугольник с округлым верхом. */
+function backShape(width: number, height: number): THREE.Shape {
+  const half = width / 2;
+  const shape = new THREE.Shape();
+  shape.moveTo(-half, 0);
+  shape.lineTo(half, 0);
+  shape.lineTo(half, height - half * 0.9);
+  shape.quadraticCurveTo(half, height, 0, height);
+  shape.quadraticCurveTo(-half, height, -half, height - half * 0.9);
+  shape.closePath();
+  return shape;
+}
+
+function extruded(shape: THREE.Shape, depth: number, bevel: number, material: THREE.Material): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: bevel > 0, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 3, curveSegments: 16 }),
+    material,
+  );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/** Классическое кресло: резная деревянная рама, бордовая обивка. Сидящий смотрит в сторону -z. */
 export function buildChair(): THREE.Group {
   const group = new THREE.Group();
-  const wood = flat(0x2c1a12);
-  const cushion = flat(0x6e1a22);
-  const gold = flat(PALETTE.goldDark);
+  const wood = smooth(0x8a5a2a, 36); // тёплое золотистое дерево, как на референсе
+  const woodDark = smooth(0x5a3418, 30);
+  const cushion = smooth(0x7a1c24, 6);
   const seatY = -1.7;
-  const add = (mesh: THREE.Mesh) => {
+  const add = <T extends THREE.Mesh>(mesh: T) => {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
     return mesh;
   };
 
-  add(new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.35, 3.1), wood)).position.set(0, seatY, 0);
-  add(new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.34, 2.7), cushion)).position.set(0, seatY + 0.3, 0);
+  // Сиденье: рама и мягкая подушка со скруглёнными краями.
+  const seatShape = new THREE.Shape();
+  const sw = 1.65;
+  seatShape.moveTo(-sw + 0.3, -1.55);
+  seatShape.lineTo(sw - 0.3, -1.55);
+  seatShape.quadraticCurveTo(sw, -1.55, sw, -1.25);
+  seatShape.lineTo(sw, 1.45);
+  seatShape.lineTo(-sw, 1.45);
+  seatShape.lineTo(-sw, -1.25);
+  seatShape.quadraticCurveTo(-sw, -1.55, -sw + 0.3, -1.55);
+  const frame = add(extruded(seatShape, 0.3, 0.04, wood));
+  frame.rotation.x = Math.PI / 2;
+  frame.position.y = seatY + 0.15;
+  const pad = add(extruded(seatShape, 0.22, 0.12, cushion));
+  pad.rotation.x = Math.PI / 2;
+  pad.scale.set(0.86, 0.86, 1);
+  pad.position.y = seatY + 0.5;
 
-  // Спинка: рама, обивка, округлый верх с золотой накладкой.
-  add(new THREE.Mesh(new THREE.BoxGeometry(3.3, 4.6, 0.35), wood)).position.set(0, seatY + 2.3, 1.5);
-  add(new THREE.Mesh(new THREE.BoxGeometry(2.7, 3.9, 0.22), cushion)).position.set(0, seatY + 2.3, 1.28);
-  const crest = add(new THREE.Mesh(new THREE.CylinderGeometry(1.8, 1.8, 0.36, 8, 1, false, 0, Math.PI), wood));
-  crest.rotation.set(Math.PI / 2, 0, Math.PI / 2);
-  crest.position.set(0, seatY + 4.55, 1.5);
-  add(new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), gold)).position.set(0, seatY + 5.6, 1.3);
-  // Гвоздики обивки.
-  for (const x of [-1.2, -0.4, 0.4, 1.2]) {
-    add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.06), gold)).position.set(x, seatY + 4.15, 1.15);
-  }
+  // Спинка: рама с округлым верхом и обивка, утопленная в раму.
+  const back = add(extruded(backShape(3.3, 5.2), 0.34, 0.05, wood));
+  back.position.set(0, seatY + 0.1, 1.3);
+  const backPad = add(extruded(backShape(2.6, 4.3), 0.2, 0.1, cushion));
+  backPad.position.set(0, seatY + 0.55, 1.16);
+  // Резное навершие.
+  const finial = add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), smooth(PALETTE.gold, 70)));
+  finial.position.set(0, seatY + 5.45, 1.47);
 
-  // Подлокотники.
+  // Подлокотники: изогнутая планка на точёной стойке.
   for (const side of [-1, 1]) {
-    add(new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.3, 2.7), wood)).position.set(side * 1.65, seatY + 1.3, 0.2);
-    add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.2, 0.3), wood)).position.set(side * 1.65, seatY + 0.6, -1.05);
+    const arm = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 2.5, 4, 10), wood));
+    arm.rotation.x = Math.PI / 2 - 0.1;
+    arm.position.set(side * 1.68, seatY + 1.42, 0.1);
+    const armPad = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 1.2, 4, 10), cushion));
+    armPad.rotation.x = Math.PI / 2 - 0.1;
+    armPad.position.set(side * 1.68, seatY + 1.55, 0.1);
+    const post = add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 1.2, 10), woodDark));
+    post.position.set(side * 1.68, seatY + 0.75, -1.1);
   }
 
-  // Ножки.
+  // Ножки: передние точёные, задние чуть отклонены назад.
   const legHeight = seatY - FLOOR_Y;
-  for (const x of [-1.45, 1.45]) {
-    for (const z of [-1.35, 1.35]) {
-      add(new THREE.Mesh(new THREE.BoxGeometry(0.3, legHeight, 0.3), wood)).position.set(x, FLOOR_Y + legHeight / 2, z);
-    }
+  for (const x of [-1.42, 1.42]) {
+    const front = add(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.1, legHeight, 10), woodDark));
+    front.position.set(x, FLOOR_Y + legHeight / 2, -1.3);
+    const rear = add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.11, legHeight + 0.1, 10), woodDark));
+    rear.position.set(x, FLOOR_Y + legHeight / 2, 1.38);
+    rear.rotation.x = 0.08;
   }
   return group;
 }
@@ -132,7 +186,7 @@ export const SEATS: { x: number; z: number; angle: number }[] = [
   { x: SEAT_DISTANCE, z: 0, angle: Math.PI / 2 },
 ];
 
-/** Перевести точку из координат места (x — вправо от игрока, z — к нему от центра) в координаты сцены. */
+/** Перевести точку из координат места (right — вправо от игрока, fromCenter — от центра стола) в координаты сцены. */
 export function seatPoint(seat: number, right: number, y: number, fromCenter: number): THREE.Vector3 {
   const spot = SEATS[seat];
   const length = Math.hypot(spot.x, spot.z);
@@ -165,38 +219,56 @@ const chipMaterials = new Map<number, THREE.Material[]>();
 function chipMaterial(color: number): THREE.Material[] {
   let materials = chipMaterials.get(color);
   if (!materials) {
-    // Ребро: чередование цвета и светлых вставок. Верх: кольцо и середина.
-    const side = pixelTexture(32, 4, (ctx, w, h) => {
+    // Ребро: чередование цвета и светлых вставок. Верх: кольцо со вставками и середина.
+    const side = paintedTexture(128, 16, (ctx, w, h) => {
       ctx.fillStyle = hex(color);
       ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = '#ebe6d6';
-      for (let x = 0; x < w; x += 8) ctx.fillRect(x, 0, 3, h);
+      ctx.fillStyle = '#f2ecdc';
+      for (let x = 0; x < w; x += 32) ctx.fillRect(x, 0, 13, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(0, 0, w, 2);
+      ctx.fillRect(0, h - 2, w, 2);
     });
-    const top = pixelTexture(16, 16, (ctx, w, h) => {
-      ctx.fillStyle = '#ebe6d6';
-      ctx.fillRect(0, 0, w, h);
+    const top = paintedTexture(128, 128, (ctx, w, h) => {
+      const c = w / 2;
       ctx.fillStyle = hex(color);
-      ctx.fillRect(2, 2, w - 4, h - 4);
-      ctx.fillStyle = '#ebe6d6';
-      ctx.fillRect(6, 6, 4, 4);
+      ctx.fillRect(0, 0, w, h);
+      // Светлые вставки по краю.
+      ctx.fillStyle = '#f2ecdc';
+      for (let i = 0; i < 8; i++) {
+        ctx.beginPath();
+        ctx.moveTo(c, c);
+        ctx.arc(c, c, c, (i * Math.PI) / 4 - 0.16, (i * Math.PI) / 4 + 0.16);
+        ctx.fill();
+      }
+      ctx.fillStyle = hex(color);
+      ctx.beginPath();
+      ctx.arc(c, c, c * 0.72, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#f2ecdc';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(c, c, c * 0.56, 0, Math.PI * 2);
+      ctx.stroke();
     });
-    const sideMaterial = retro(new THREE.MeshLambertMaterial({ map: side, flatShading: true }));
-    const topMaterial = retro(new THREE.MeshLambertMaterial({ map: top, flatShading: true }));
+    const sideMaterial = new THREE.MeshPhongMaterial({ map: side, shininess: 30, specular: 0x222222 });
+    const topMaterial = new THREE.MeshPhongMaterial({ map: top, shininess: 30, specular: 0x222222 });
     materials = [sideMaterial, topMaterial, topMaterial];
     chipMaterials.set(color, materials);
   }
   return materials;
 }
 
-const chipGeometry = new THREE.CylinderGeometry(CHIP_RADIUS, CHIP_RADIUS, CHIP_HEIGHT, 10);
+const chipGeometry = new THREE.CylinderGeometry(CHIP_RADIUS, CHIP_RADIUS, CHIP_HEIGHT, 24);
 
 export function buildChip(color: number): THREE.Mesh {
   const chip = new THREE.Mesh(chipGeometry, chipMaterial(color));
   chip.castShadow = true;
+  chip.receiveShadow = true;
   return chip;
 }
 
-export const CHIP_COLORS = [0x8a1c2b, 0x1c2550, 0x1a1a22, 0x1f6a4a];
+export const CHIP_COLORS = [0x9a1c2b, 0x1c2f6a, 0x1a1a22, 0x1f6a4a];
 
 /** Декоративные стопки фишек у каждого игрока. */
 export function buildChipStacks(): THREE.Group {

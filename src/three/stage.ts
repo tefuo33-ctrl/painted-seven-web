@@ -66,7 +66,7 @@ export const WARDROBE_SPOT = new THREE.Vector3(0, 0, 16);
 export function createStage(container: HTMLElement): Stage {
   const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(1);
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.domElement.style.width = '100%';
   renderer.domElement.style.height = '100%';
   renderer.domElement.style.imageRendering = 'pixelated';
@@ -89,7 +89,7 @@ export function createStage(container: HTMLElement): Stage {
   const key = new THREE.DirectionalLight(0xffc890, 1.25);
   key.position.set(-7, 17, -10);
   key.target.position.set(0, 0, 1);
-  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.left = -15;
   key.shadow.camera.right = 15;
   key.shadow.camera.top = 15;
@@ -100,7 +100,11 @@ export function createStage(container: HTMLElement): Stage {
   key.shadow.normalBias = 0.04;
   scene.add(key, key.target);
 
-  const composer = new EffectComposer(renderer);
+  // Сглаживание краёв (MSAA): без «лесенок» на картах и силуэтах.
+  const composer = new EffectComposer(
+    renderer,
+    new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType }),
+  );
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), gfx.bloomStrength, 0.5, 0.9);
   composer.addPass(bloom);
@@ -174,6 +178,7 @@ export function createStage(container: HTMLElement): Stage {
     // На «низком» качестве плотность экрана не учитываем — картинка мельче, зато быстрее.
     const ratio = gfx.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     const density = ratio / gfx.pixelScale;
+    renderer.domElement.style.imageRendering = gfx.pixelScale > 1.5 ? 'pixelated' : 'auto';
     const renderWidth = Math.max(200, Math.round(width * density));
     const renderHeight = Math.max(150, Math.round(height * density));
     renderer.setSize(renderWidth, renderHeight, false);

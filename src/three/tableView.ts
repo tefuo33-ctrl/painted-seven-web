@@ -110,11 +110,11 @@ export class TableView {
 
   private trickPose(seat: number, order: number, card: Card): Pose {
     const spot = SEATS[seat];
-    const reach = seat % 2 === 0 ? 1.45 : 1.6;
+    const reach = seat % 2 === 0 ? 1.7 : 1.9;
     return {
       position: new THREE.Vector3(Math.sign(spot.x) * reach, 0.06 + order * 0.04, Math.sign(spot.z) * reach - 0.3),
       quaternion: lying(spot.angle + jitter(cardLabel(card)), true),
-      scale: 1.25, // карты взятки крупнее: их должны прочитать все
+      scale: 1.5, // карты взятки крупнее: их должны прочитать все
     };
   }
 
@@ -145,16 +145,16 @@ export class TableView {
     return () => {
       const camera = this.stage.camera;
       // На вертикальном экране рука ближе к камере, чтобы карты были крупнее.
-      const distance = camera.aspect < 1 ? 5.4 : 6.2;
+      const distance = camera.aspect < 1 ? 4.6 : 5.0;
       const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * distance;
       const halfWidth = halfHeight * camera.aspect;
-      const spacing = count > 1 ? Math.min(0.7, (halfWidth * 2 - 1.3) / (count - 1)) : 0;
+      const spacing = count > 1 ? Math.min(0.78, (halfWidth * 2 - 1.3) / (count - 1)) : 0;
       const offset = index - (count - 1) / 2;
       const raised =
         (playable ? 0.14 : 0) + (this.hovered === label && playable ? 0.14 : 0) + (this.selected === label ? 0.36 : 0);
       const local = new THREE.Vector3(
         offset * spacing,
-        -halfHeight + 0.62 - offset * offset * 0.012 + raised,
+        -halfHeight + 0.7 - offset * offset * 0.012 + raised,
         -distance + index * 0.02,
       );
       return {
