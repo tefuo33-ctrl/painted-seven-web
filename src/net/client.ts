@@ -2,8 +2,11 @@
 
 import type { ClientMessage, ServerMessage } from './protocol';
 
-/** Адрес сервера. Задаётся при сборке переменной VITE_SERVER_URL (см. README). */
-const CONFIGURED_URL: string = import.meta.env.VITE_SERVER_URL ?? '';
+/** Сервер игры в интернете (Render). Адрес не секретный — это просто «куда звонить». */
+const PUBLIC_SERVER_URL = 'wss://painted-seven-web.onrender.com';
+
+/** Другой адрес можно задать при сборке переменной VITE_SERVER_URL. */
+const CONFIGURED_URL: string = import.meta.env.VITE_SERVER_URL || '';
 
 /** Адрес сервера или пустая строка, если он ещё не настроен. */
 export function serverUrl(): string {
@@ -11,7 +14,7 @@ export function serverUrl(): string {
   // При запуске на своём компьютере сервер стартует командой «npm run server».
   const host = location.hostname;
   if (host === 'localhost' || host === '127.0.0.1') return `ws://${host}:8787`;
-  return '';
+  return PUBLIC_SERVER_URL;
 }
 
 /** Постоянный случайный номер этого браузера: по нему сервер возвращает игрока на его место. */

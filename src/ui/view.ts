@@ -206,7 +206,7 @@ function lobbyHtml(ui: UiState): string {
         <input type="text" data-join-code maxlength="5" placeholder="КОД" value="${ui.joinCode}" autocomplete="off" autocapitalize="characters">
         <button class="btn" data-action="join-room" ${busy ? 'disabled' : ''}>Войти</button>
       </div>
-      ${busy ? '<p class="hint">Подключение к серверу…</p>' : ''}
+      ${busy ? '<p class="hint">Подключение к серверу… Если сервер «спал», это займёт до минуты.</p>' : ''}
       ${back}
     </div></div>`;
   }

@@ -62,11 +62,11 @@ GitHub Pages умеет отдавать только готовые стран�
    - **Instance Type:** Free
 4. Нажмите **Create Web Service** и дождитесь надписи «Live». Вверху появится адрес вида
    `https://painted-seven-web.onrender.com`. Откройте его — должно быть написано «сервер работает».
-5. Сообщите этот адрес игре. В репозитории на GitHub: **Settings → Secrets and variables →
-   Actions → вкладка Variables → New repository variable**:
-   - **Name:** `VITE_SERVER_URL`
-   - **Value:** тот же адрес, но с `wss://` вместо `https://`, например `wss://painted-seven-web.onrender.com`
-6. Пересоберите страницу: вкладка **Actions** → последний запуск → **Re-run all jobs**.
+5. Сообщите этот адрес игре: впишите его в `src/net/client.ts`, в строку `PUBLIC_SERVER_URL`,
+   заменив `https://` на `wss://` (например, `wss://painted-seven-web.onrender.com`), и сделайте коммит в `main`.
+
+Сейчас сервер уже работает по адресу `https://painted-seven-web.onrender.com` и вписан в игру.
+Render сам обновляет его при каждом коммите в `main`.
 
 Особенность бесплатного тарифа Render: если сервером 15 минут никто не пользуется, он «засыпает»,
 и первое подключение после этого занимает около минуты.
