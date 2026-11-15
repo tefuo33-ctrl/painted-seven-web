@@ -26,12 +26,14 @@ import type { ServerMessage } from '../net/protocol';
 import { pickBotNames } from '../shared/names';
 import { type Skin, randomGender, randomSkin } from '../three/character';
 import { Players } from '../three/players';
+import { gfx, saveGfx } from '../three/gfx';
 import type { Stage } from '../three/stage';
 import { SEATS } from '../three/table';
 import { tableStateFromGame } from '../three/tableState';
 import { TableView } from '../three/tableView';
 import { TurnMarker } from '../three/turnMarker';
 import { displayName, loadProfile, saveProfile } from './profile';
+import { playCardSound, playShuffleSound, playTrickSound, setSoundEnabled, unlockSound } from './sound';
 import { type UiState, HUMAN, appHtml } from './view';
 
 /** Сохранённая партия: состояние движка и внешний вид игроков за столом. */
@@ -101,10 +103,16 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     positionPlates();
   }
 
+  let lastTrickLength = 0;
+
   /** Привести 3D-стол к состоянию партии. */
   function syncTable(options: { deal?: boolean } = {}): void {
     const game = ui.game;
     if (!game) return;
+    // Щелчок, когда на стол легла новая карта.
+    if (game.trick.length > lastTrickLength) playCardSound();
+    lastTrickLength = game.trick.length;
+    if (options.deal) playShuffleSound();
     table.selected = ui.selected;
     table.sync(tableStateFromGame(game, HUMAN), {
       deal: options.deal,
@@ -182,6 +190,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
           skipTrickWait = null;
           if (!alive()) break;
           players.nod(game.trickWinner ?? 0);
+          playTrickSound();
           await table.collectTrick(game.trickWinner ?? 0);
           if (!alive()) break;
           finishTrick(game);
@@ -287,6 +296,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         // Взятка сыграна и на сервере уже забрана — показываем, как она улетает.
         if (previous?.phase === 'trickEnd' && !(next.phase === 'trickEnd' && next.trick.length === 4)) {
           players.nod(previous.trickWinner ?? 0);
+          playTrickSound();
           await table.collectTrick(previous.trickWinner ?? 0);
         }
         if (previous && next.trick.length > previous.trick.length) {
@@ -502,10 +512,17 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         render();
         break;
       }
+      case 'toggle-sound':
+        gfx.sound = !gfx.sound;
+        setSoundEnabled(gfx.sound);
+        saveGfx();
+        render();
+        break;
       case 'open-rules':
       case 'open-sheet':
       case 'open-quit':
-        ui.modal = { kind: action.slice(5) as 'rules' | 'sheet' | 'quit' };
+      case 'open-settings':
+        ui.modal = { kind: action.slice(5) as 'rules' | 'sheet' | 'quit' | 'settings' };
         render();
         break;
       case 'close-modal':
@@ -543,6 +560,10 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   }
 
   // Один обработчик на весь интерфейс: ищем ближайший элемент с data-action.
+  setSoundEnabled(gfx.sound);
+  // Браузер разрешает звук только после первого нажатия человека.
+  window.addEventListener('pointerdown', unlockSound, { once: false, passive: true });
+
   root.addEventListener('click', (event) => {
     const element = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (!element || (element as HTMLButtonElement).disabled) return;
@@ -581,6 +602,18 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   // Настройки правил в меню.
   root.addEventListener('change', (event) => {
     const element = event.target as HTMLSelectElement;
+    const gfxKey = element.dataset?.gfx;
+    if (gfxKey) {
+      // Настройки звука и графики применяются сразу.
+      if (gfxKey === 'sound') gfx.sound = element.value === 'true';
+      if (gfxKey === 'bloom') gfx.bloom = element.value === 'true';
+      if (gfxKey === 'quality') gfx.quality = element.value === 'low' ? 'low' : 'high';
+      if (gfxKey === 'pixelScale') gfx.pixelScale = Number(element.value);
+      setSoundEnabled(gfx.sound);
+      saveGfx();
+      stage.applySettings();
+      return;
+    }
     const key = element.dataset?.setting as keyof RuleSettings | undefined;
     if (!key) return;
     const raw = element.value;

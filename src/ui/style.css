@@ -95,6 +95,11 @@ body.scene-only #app {
   font-size: 14px;
 }
 
+.btn.off {
+  color: var(--ink-dim);
+  text-decoration: line-through;
+}
+
 .btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;

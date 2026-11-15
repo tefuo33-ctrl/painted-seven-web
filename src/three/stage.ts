@@ -89,7 +89,9 @@ export function createStage(container: HTMLElement): Stage {
     const width = Math.max(1, container.clientWidth);
     const height = Math.max(1, container.clientHeight);
     // Считаем в настоящих пикселях экрана: у телефонов их в 2–3 раза больше, чем «точек» в браузере.
-    const density = Math.min(window.devicePixelRatio || 1, 3) / gfx.pixelScale;
+    // На «низком» качестве плотность экрана не учитываем — картинка мельче, зато быстрее.
+    const ratio = gfx.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 3);
+    const density = ratio / gfx.pixelScale;
     const renderWidth = Math.max(160, Math.round(width * density));
     const renderHeight = Math.max(120, Math.round(height * density));
     renderer.setSize(renderWidth, renderHeight, false);
@@ -116,9 +118,10 @@ export function createStage(container: HTMLElement): Stage {
   }
 
   function applySettings(): void {
-    bloom.enabled = gfx.bloom;
+    const high = gfx.quality === 'high';
+    bloom.enabled = gfx.bloom && high;
     bloom.strength = gfx.bloomStrength;
-    vignette.enabled = gfx.vignette > 0;
+    vignette.enabled = gfx.vignette > 0 && high;
     vignette.uniforms.uStrength.value = gfx.vignette;
     resize();
   }

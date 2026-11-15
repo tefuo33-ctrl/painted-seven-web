@@ -23,7 +23,7 @@ import {
   winners,
 } from '../engine';
 import { HAIR_FEMALE, SHIRTS, SUITS_MALE, TIES } from '../three/character';
-import { hex } from '../three/gfx';
+import { gfx, hex } from '../three/gfx';
 import type { SeatInfo } from '../net/protocol';
 import type { Profile } from './profile';
 
@@ -35,6 +35,7 @@ export type Modal =
   | { kind: 'sheet' }
   | { kind: 'rules' }
   | { kind: 'quit' }
+  | { kind: 'settings' }
   | { kind: 'joker'; mode: JokerMode | null };
 
 export interface OnlineState {
@@ -111,6 +112,7 @@ function menuHtml(ui: UiState): string {
       ${ui.hasSave ? '<button class="btn" data-action="continue">Продолжить партию</button>' : ''}
       <button class="btn" data-action="open-lobby">Играть с друзьями</button>
       <button class="btn" data-action="open-wardrobe">Гардероб</button>
+      <button class="btn" data-action="open-settings">Звук и графика</button>
       <button class="btn" data-action="open-rules">Правила коротко</button>
       <details class="settings">
         <summary>Настройки правил</summary>
@@ -249,6 +251,7 @@ function topbarHtml(game: GameState): string {
       <span class="mode">«${roundName(round)}» · ${trump}</span>
     </div>
     <div class="top-buttons">
+      <button class="btn small ${gfx.sound ? '' : 'off'}" data-action="toggle-sound" aria-label="Звук" title="Звук">♪</button>
       <button class="btn small" data-action="open-sheet">Таблица</button>
       <button class="btn small" data-action="open-quit" aria-label="Меню">☰</button>
     </div>
@@ -458,11 +461,27 @@ function gameOverHtml(game: GameState): string {
   return modalHtml(title, sheetHtml(game), '<button class="btn primary" data-action="to-menu">Новая партия</button>', true);
 }
 
+function gfxSelect(key: string, label: string, options: [string, string][], current: string): string {
+  const items = options
+    .map(([value, text]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${text}</option>`)
+    .join('');
+  return `<label class="setting"><span>${label}</span><select data-gfx="${key}">${items}</select></label>`;
+}
+
+function gfxSettingsHtml(): string {
+  return `${gfxSelect('sound', 'Звук', [['true', 'Включён'], ['false', 'Выключен']], String(gfx.sound))}
+    ${gfxSelect('quality', 'Качество', [['high', 'Высокое'], ['low', 'Низкое (для слабых телефонов)']], gfx.quality)}
+    ${gfxSelect('pixelScale', 'Пиксельность', [['2', 'Мелкие пиксели'], ['3', 'Обычные'], ['4', 'Крупные']], String(gfx.pixelScale))}
+    ${gfxSelect('bloom', 'Свечение (блум)', [['true', 'Включено'], ['false', 'Выключено']], String(gfx.bloom))}`;
+}
+
 function overlayHtml(ui: UiState): string {
   const game = ui.game;
   switch (ui.modal.kind) {
     case 'rules':
       return modalHtml('Правила коротко', rulesHtml(), CLOSE_BUTTON);
+    case 'settings':
+      return modalHtml('Настройки', gfxSettingsHtml(), CLOSE_BUTTON);
     case 'sheet':
       return game ? modalHtml('Таблица очков', sheetHtml(game), CLOSE_BUTTON, true) : '';
     case 'quit':
@@ -471,7 +490,8 @@ function overlayHtml(ui: UiState): string {
         ui.online
           ? '<p>Если выйти, за вас будет ходить бот. Вернуться можно по той же ссылке.</p>'
           : '<p>Партия сохраняется автоматически — её можно продолжить позже.</p>',
-        `<button class="btn" data-action="open-rules">Правила</button>
+        `<button class="btn" data-action="open-settings">Настройки</button>
+         <button class="btn" data-action="open-rules">Правила</button>
          <button class="btn" data-action="to-menu">Выйти в меню</button>
          <button class="btn primary" data-action="close-modal">Вернуться к игре</button>`,
       );

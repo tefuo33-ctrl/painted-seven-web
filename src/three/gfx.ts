@@ -5,6 +5,9 @@ import * as THREE from 'three';
 
 /** Настройки картинки. Позже их можно будет менять в меню. */
 export const gfx = {
+  /** Качество: на «низком» выключены блум, виньетка и дрожание вершин, рендер мельче. */
+  quality: 'high' as 'high' | 'low',
+  sound: true,
   /** Во сколько раз рендер меньше окна (3 = треть размера, крупные пиксели). */
   pixelScale: 3,
   /** Сила дрожания вершин: 0 — выключено, 1 — как на PS1, больше — грубее. */
@@ -14,6 +17,31 @@ export const gfx = {
   /** Сила виньетки: 0 — выключена. */
   vignette: 0.5,
 };
+
+const GFX_KEY = 'painted-seven-gfx-v1';
+
+/** Загрузить сохранённые настройки картинки и звука. */
+export function loadGfx(): void {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GFX_KEY) ?? 'null') as Partial<typeof gfx> | null;
+    if (!saved) return;
+    if (saved.quality === 'low' || saved.quality === 'high') gfx.quality = saved.quality;
+    if (typeof saved.sound === 'boolean') gfx.sound = saved.sound;
+    if (typeof saved.bloom === 'boolean') gfx.bloom = saved.bloom;
+    if (typeof saved.pixelScale === 'number' && saved.pixelScale >= 1 && saved.pixelScale <= 5) gfx.pixelScale = saved.pixelScale;
+  } catch {
+    // хранилище недоступно — остаются настройки по умолчанию
+  }
+}
+
+export function saveGfx(): void {
+  try {
+    const { quality, sound, bloom, pixelScale } = gfx;
+    localStorage.setItem(GFX_KEY, JSON.stringify({ quality, sound, bloom, pixelScale }));
+  } catch {
+    // не страшно
+  }
+}
 
 /** Палитра игры. */
 export const PALETTE = {
@@ -40,7 +68,7 @@ export const snapUniform = { value: new THREE.Vector2(0, 0) };
 
 /** Пересчитать сетку дрожания под размер рендера. */
 export function updateSnap(renderWidth: number, renderHeight: number): void {
-  if (gfx.snapStrength <= 0) {
+  if (gfx.snapStrength <= 0 || gfx.quality === 'low') {
     snapUniform.value.set(0, 0);
   } else {
     snapUniform.value.set(
