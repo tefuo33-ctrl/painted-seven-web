@@ -5,7 +5,7 @@
 // или использовать в приложении для телефона и компьютера.
 // Менять состояние можно только функциями этого файла — они проверяют правила.
 
-import { type Card, type Suit, createDeck, isJoker, sameCard } from './cards';
+import { type Card, type Suit, SUITS, createDeck, isJoker, sameCard } from './cards';
 import { type Rng, deal, randomInt, shuffle } from './deck';
 import {
   type RoundSpec,
@@ -41,9 +41,11 @@ export type Phase = 'deal' | 'bidding' | 'playing' | 'trickEnd' | 'roundEnd' | '
 export interface SheetCell {
   bid: number | null;
   tricks: number;
-  /** Очки за раунд. */
+  /** Очки за раунд (уже со штрафом). */
   points: number;
   star: boolean;
+  /** Штраф за просроченные ходы (0 или отрицательное число). */
+  penalty: number;
   /** Сумма очков с начала партии. */
   total: number;
 }
@@ -78,6 +80,18 @@ export interface GameState {
   trick: Play[];
   /** Кто забрал только что сыгранную взятку (в фазе trickEnd). */
   trickWinner: number | null;
+  /** Карты, вышедшие в уже сыгранных взятках этого раунда (их видели все). */
+  seen: Card[];
+  /** Сколько раундов подряд каждый игрок заказывал пас (0 взяток). */
+  passStreak: number[];
+  /** Штрафы за просроченные ходы в этом раунде (отрицательные числа). */
+  penalties: number[];
+  /** Сколько раз подряд текущий игрок просрочил свой ход. */
+  strikes: number;
+  /** Кто выбыл из раунда за бездействие — за него доигрывает бот. */
+  autoPlay: boolean[];
+  /** Когда начался текущий ход (мс, часы того, кто ведёт партию). Нужно для таймера. */
+  turnStartedAt: number;
   sheet: SheetRow[];
 }
 
@@ -113,6 +127,12 @@ export function createGame(options: NewGameOptions = {}): GameState {
     taken: [],
     trick: [],
     trickWinner: null,
+    seen: [],
+    passStreak: Array.from({ length: PLAYER_COUNT }, () => 0),
+    penalties: [],
+    strikes: 0,
+    autoPlay: [],
+    turnStartedAt: 0,
     sheet: [],
   };
   startRound(state);
@@ -123,9 +143,24 @@ export function currentRound(state: GameState): RoundSpec {
   return state.rounds[state.roundIndex];
 }
 
-/** Сосед раздающего по часовой: он первым получает карту, первым заказывает и первым заходит. */
+/**
+ * Сосед раздающего по часовой: он первым получает карту, первым заходит
+ * и заказывает ПОСЛЕДНИМ (раньше этот игрок срезал колоду).
+ */
 export function firstPlayer(state: GameState): number {
   return next(state.dealer);
+}
+
+/** Кто заказывает первым: следующий за «первым игроком». Тогда первый игрок заказывает последним. */
+export function firstBidder(state: GameState): number {
+  return next(firstPlayer(state));
+}
+
+/** Начался новый ход: сбрасываем счётчик просрочек. Время ставит тот, кто ведёт партию. */
+function newTurn(state: GameState, player: number): void {
+  state.turn = player;
+  state.strikes = 0;
+  state.turnStartedAt = 0;
 }
 
 function startRound(state: GameState): void {
@@ -138,9 +173,12 @@ function startRound(state: GameState): void {
   state.taken = Array.from({ length: PLAYER_COUNT }, () => 0);
   state.trick = [];
   state.trickWinner = null;
-  state.turn = firstPlayer(state);
+  state.seen = [];
+  state.penalties = Array.from({ length: PLAYER_COUNT }, () => 0);
+  state.autoPlay = Array.from({ length: PLAYER_COUNT }, () => false);
   // В «Тёмной» сначала заказ, потом раздача.
   state.phase = bidsBeforeDeal(round.mode) ? 'bidding' : 'deal';
+  newTurn(state, state.phase === 'bidding' ? firstBidder(state) : firstPlayer(state));
 }
 
 /** Раздача: колода тасуется, карты раздаются по одной по часовой стрелке. */
@@ -158,22 +196,46 @@ export function dealCards(state: GameState): void {
     // Есть остаток колоды — козырь показывает его верхняя карта,
     // иначе — последняя карта раздающего (остаётся у него в руке).
     state.trumpCard = result.rest.length > 0 ? result.rest[0] : result.dealerLastCard;
-    state.trump = state.trumpCard.suit;
+    // Если козырь показала семёрка пик (джокер) — раунд играется без козыря.
+    state.trump = isJoker(state.trumpCard) ? null : state.trumpCard.suit;
   }
 
   const needBids = hasBidding(round.mode) && state.bids.some((b) => b === null);
   state.phase = needBids ? 'bidding' : 'playing';
-  state.turn = firstPlayer(state);
+  newTurn(state, needBids ? firstBidder(state) : firstPlayer(state));
+}
+
+/** Почему заказ запрещён: 'sum' — сумма заказов сравнялась бы с числом взяток, 'pass' — третий пас подряд. */
+export type BidBan = 'sum' | 'pass';
+
+/**
+ * Запрещён ли такой заказ игроку (null — разрешён).
+ *  - Последний заказывающий не может довести сумму заказов до числа взяток:
+ *    кто-то обязательно недоберёт или переберёт.
+ *  - Нельзя заказывать пас (0) слишком много раундов подряд.
+ */
+export function bidBan(state: GameState, player: number, bid: number): BidBan | null {
+  const { settings } = state;
+  const cards = currentRound(state).cards;
+  const sumBanned = (value: number) => {
+    if (!settings.forbidSumEqualsCards || player !== firstPlayer(state)) return false;
+    const sum = state.bids.reduce<number>((s, b, i) => s + (i === player ? 0 : (b ?? 0)), 0);
+    return sum + value === cards;
+  };
+  if (sumBanned(bid)) return 'sum';
+  if (bid === 0 && settings.maxPassesInRow > 0 && state.passStreak[player] >= settings.maxPassesInRow) {
+    // Если кроме паса заказать нечего (например, одна карта и запрет суммы), пас всё же разрешён.
+    const hasOther = Array.from({ length: cards }, (_, i) => i + 1).some((value) => !sumBanned(value));
+    if (hasOther) return 'pass';
+  }
+  return null;
 }
 
 /** Какие заказы сейчас разрешены игроку. */
 export function allowedBids(state: GameState, player: number): number[] {
   const cards = currentRound(state).cards;
   const all = Array.from({ length: cards + 1 }, (_, i) => i);
-  if (!state.settings.forbidSumEqualsCards || player !== state.dealer) return all;
-  // Раздающий заказывает последним и не может «закрыть» сумму.
-  const sum = state.bids.reduce<number>((s, b) => s + (b ?? 0), 0);
-  return all.filter((bid) => sum + bid !== cards);
+  return all.filter((bid) => bidBan(state, player, bid) === null);
 }
 
 export function placeBid(state: GameState, player: number, bid: number): void {
@@ -182,11 +244,12 @@ export function placeBid(state: GameState, player: number, bid: number): void {
   if (!allowedBids(state, player).includes(bid)) throw new Error(`Заказ ${bid} недопустим`);
 
   state.bids[player] = bid;
+  state.passStreak[player] = bid === 0 ? state.passStreak[player] + 1 : 0;
   if (state.bids.every((b) => b !== null)) {
     state.phase = state.dealt ? 'playing' : 'deal';
-    state.turn = firstPlayer(state);
+    newTurn(state, firstPlayer(state));
   } else {
-    state.turn = next(player);
+    newTurn(state, next(player));
   }
 }
 
@@ -228,6 +291,10 @@ export function playCard(
         throw new Error('Требовать карту можно, только заходя с джокера');
       }
       play.joker.demand = choice.demand;
+      if (choice.demand === 'suit') {
+        if (!choice.suit || !SUITS.includes(choice.suit)) throw new Error('Для этого требования нужно назвать масть');
+        play.joker.suit = choice.suit;
+      }
     }
   }
 
@@ -238,8 +305,9 @@ export function playCard(
   if (state.trick.length === PLAYER_COUNT) {
     state.trickWinner = trickWinner(state.trick, state.trump);
     state.phase = 'trickEnd';
+    state.strikes = 0;
   } else {
-    state.turn = next(player);
+    newTurn(state, next(player));
   }
 }
 
@@ -250,11 +318,12 @@ export function finishTrick(state: GameState): void {
   }
   const winner = state.trickWinner;
   state.taken[winner]++;
+  state.seen.push(...state.trick.map((play) => play.card));
   state.trick = [];
   state.trickWinner = null;
 
   if (state.hands[winner].length > 0) {
-    state.turn = winner;
+    newTurn(state, winner);
     state.phase = 'playing';
   } else {
     finishRound(state);
@@ -268,17 +337,39 @@ function finishRound(state: GameState): void {
   for (let player = 0; player < PLAYER_COUNT; player++) {
     const bid = hasBidding(round.mode) ? state.bids[player] : null;
     const score = scoreRound(round.mode, bid, state.taken[player], state.settings);
-    const points = score.points;
+    const penalty = state.penalties[player] ?? 0;
+    const points = score.points + penalty;
     cells.push({
       bid,
       tricks: state.taken[player],
       points,
       star: score.star,
+      penalty,
       total: (previous ? previous.cells[player].total : 0) + points,
     });
   }
   state.sheet.push({ round, trump: state.trump, dealer: state.dealer, cells });
   state.phase = 'roundEnd';
+}
+
+/** Что случилось при просрочке хода: штраф или игрок выбыл из раунда. */
+export type TimeoutResult = 'penalty' | 'kicked';
+
+/**
+ * Текущий игрок просрочил ход (прошло settings.turnSeconds без действия).
+ * Каждая просрочка — штраф; после settings.maxTimeouts подряд игрок выбывает из раунда:
+ * до конца раунда за него ходит бот.
+ */
+export function timeoutStrike(state: GameState): TimeoutResult {
+  if (state.phase !== 'bidding' && state.phase !== 'playing') throw new Error('Сейчас никто не ходит');
+  const player = state.turn;
+  state.penalties[player] -= state.settings.timeoutPenalty;
+  state.strikes++;
+  if (state.strikes >= state.settings.maxTimeouts) {
+    state.autoPlay[player] = true;
+    return 'kicked';
+  }
+  return 'penalty';
 }
 
 /** Перейти к следующему раунду (или закончить партию). */

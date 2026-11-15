@@ -7,13 +7,18 @@ import { DEFAULT_SETTINGS, type RuleSettings } from './settings';
 /** Сила джокера (7♠): high — самая сильная карта, low — самая слабая. */
 export type JokerMode = 'high' | 'low';
 
-/** Что можно потребовать у остальных, заходя с джокера. */
-export type JokerDemand = 'trump' | 'strongest' | 'weakest';
+/**
+ * Что можно потребовать у остальных, заходя с джокера.
+ * 'suit' — старшую карту названной масти (только в игре без козыря).
+ */
+export type JokerDemand = 'trump' | 'strongest' | 'weakest' | 'suit';
 
 export interface JokerChoice {
   mode: JokerMode;
   /** Требование ко всем остальным игрокам (только при заходе с джокера). */
   demand?: JokerDemand;
+  /** Масть для требования 'suit'. */
+  suit?: Suit;
 }
 
 /** Одна карта, положенная во взятку. */
@@ -47,8 +52,13 @@ function minRank(cards: Card[]): number {
  * Какие карты обязан положить игрок по требованию джокера.
  * Пустой список значит «выполнить нечем» — тогда действуют обычные правила.
  */
-export function requestedCards(hand: Card[], demand: JokerDemand, trump: Suit | null): Card[] {
+export function requestedCards(hand: Card[], demand: JokerDemand, trump: Suit | null, suit?: Suit): Card[] {
   const cards = hand.filter((c) => !isJoker(c));
+  if (demand === 'suit') {
+    // Старшая карта названной масти; если масти нет — требование выполнить нечем.
+    const inSuit = cards.filter((c) => c.suit === suit);
+    return inSuit.filter((c) => c.rank === maxRank(inSuit));
+  }
   const trumps = cards.filter((c) => c.suit === trump);
   const others = cards.filter((c) => c.suit !== trump);
   if (demand === 'trump') {
@@ -83,7 +93,7 @@ export function legalCards(ctx: LegalContext): Card[] {
   if (isJoker(first.card)) {
     // Зашли с джокера и что-то потребовали — каждый обязан положить именно это.
     if (first.joker?.demand && settings.jokerRequests) {
-      const requested = requestedCards(hand, first.joker.demand, trump);
+      const requested = requestedCards(hand, first.joker.demand, trump, first.joker.suit);
       if (requested.length > 0) return requested;
     }
     // Джокер забирает взятку: остальные кладут что хотят.
@@ -143,5 +153,6 @@ export function jokerDemands(
   settings: RuleSettings = DEFAULT_SETTINGS,
 ): JokerDemand[] {
   if (plays.length > 0 || !settings.jokerRequests) return [];
-  return trump !== null ? ['trump', 'strongest', 'weakest'] : ['strongest', 'weakest'];
+  // Без козыря вместо «козыря» можно потребовать старшую карту выбранной масти.
+  return trump !== null ? ['trump', 'strongest', 'weakest'] : ['suit', 'strongest', 'weakest'];
 }

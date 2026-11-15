@@ -6,6 +6,7 @@ import {
   type GameState,
   PLAYER_COUNT,
   allowedBids,
+  bidBan,
   buildRoundSequence,
   cardLabel,
   createDeck,
@@ -24,6 +25,7 @@ import {
   placeBid,
   playCard,
   shuffle,
+  timeoutStrike,
   totals,
   winners,
 } from '../src/engine';
@@ -113,27 +115,118 @@ describe('Порядок раундов', () => {
     expect(rounds.slice(8).every((r) => r.cards === 9)).toBe(true);
   });
 
-  it('T-38: первым заказывает сосед раздающего, раздающий последним; заказ от 0 до числа карт', () => {
+  it('T-38: первым заказывает игрок через одного от раздающего; сосед раздающего — последним и заходит первым', () => {
     const game = createGame({ seed: 3, firstDealer: 0 });
     dealCards(game);
     expect(game.phase).toBe('bidding');
-    expect(game.turn).toBe(1);
-    expect(allowedBids(game, 1)).toEqual([0, 1]);
-    expect(() => placeBid(game, 2, 0)).toThrow();
-    expect(() => placeBid(game, 1, 2)).toThrow();
-    placeBid(game, 1, 0);
+    expect(game.turn).toBe(2);
+    expect(() => placeBid(game, 1, 0)).toThrow(); // не его очередь
+    expect(() => placeBid(game, 2, 2)).toThrow(); // больше, чем карт
     placeBid(game, 2, 0);
     placeBid(game, 3, 0);
-    expect(game.turn).toBe(0);
+    placeBid(game, 0, 0);
+    expect(game.turn).toBe(1); // сосед раздающего заказывает последним
+    placeBid(game, 1, 0);
+    expect(game.phase).toBe('playing');
+    expect(game.turn).toBe(1); // и он же заходит первым
   });
 
-  it('T-38: запрет «сумма заказов = числу карт» ограничивает раздающего', () => {
-    const game = createGame({ seed: 3, firstDealer: 0, settings: { forbidSumEqualsCards: true } });
+  it('T-38: сумма заказов не может равняться числу взяток — ограничен последний заказывающий', () => {
+    const game = createGame({ seed: 3, firstDealer: 0 });
+    game.rounds = [{ mode: 'normal', cards: 8 }];
     dealCards(game);
-    placeBid(game, 1, 0);
+    placeBid(game, 2, 3);
+    placeBid(game, 3, 2);
+    placeBid(game, 0, 1);
+    // Уже заказано 6 из 8: последнему нельзя заказать 2.
+    expect(allowedBids(game, 1)).not.toContain(2);
+    expect(bidBan(game, 1, 2)).toBe('sum');
+    expect(() => placeBid(game, 1, 2)).toThrow();
+    placeBid(game, 1, 1);
+    expect(game.bids.reduce<number>((sum, bid) => sum + (bid ?? 0), 0)).toBe(7);
+  });
+
+  it('первые три игрока в заказе не ограничены суммой', () => {
+    const game = createGame({ seed: 3, firstDealer: 0 });
+    game.rounds = [{ mode: 'normal', cards: 5 }];
+    dealCards(game);
+    expect(allowedBids(game, 2)).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('нельзя заказать пас три раунда подряд', () => {
+    const game = createGame({ seed: 3, firstDealer: 0 });
+    game.rounds = [
+      { mode: 'normal', cards: 3 },
+      { mode: 'normal', cards: 3 },
+      { mode: 'normal', cards: 3 },
+    ];
+    for (let round = 0; round < 2; round++) {
+      dealCards(game);
+      while (game.phase === 'bidding') placeBid(game, game.turn, game.turn === 3 ? 0 : allowedBids(game, game.turn).find((b) => b > 0)!);
+      playRound(game);
+      nextRound(game);
+    }
+    dealCards(game);
+    expect(game.passStreak[3]).toBe(2);
+    expect(bidBan(game, 3, 0)).toBe('pass');
+    expect(allowedBids(game, 3)).not.toContain(0);
+    // Тот, кто заказывал взятки, пас заказать может.
+    expect(bidBan(game, 0, 0)).toBeNull();
+  });
+
+  it('пас разрешён, если ничего другого заказать нельзя', () => {
+    const game = createGame({ seed: 3, firstDealer: 0 });
+    dealCards(game); // одна карта
+    game.passStreak = [0, 5, 0, 0];
     placeBid(game, 2, 0);
     placeBid(game, 3, 0);
-    expect(allowedBids(game, 0)).toEqual([0]);
+    placeBid(game, 0, 0);
+    // Последний не может заказать 1 (сумма стала бы равна числу взяток) — значит, пас разрешён несмотря на серию.
+    expect(allowedBids(game, 1)).toEqual([0]);
+  });
+
+  it('если козырь показала семёрка пик — раунд идёт без козыря', () => {
+    let found = false;
+    for (let seed = 1; seed < 400 && !found; seed++) {
+      const game = createGame({ seed, firstDealer: 0 });
+      game.rounds = [{ mode: 'normal', cards: 5 }];
+      dealCards(game);
+      if (game.trumpCard && isJoker(game.trumpCard)) {
+        expect(game.trump).toBeNull();
+        found = true;
+      } else {
+        expect(game.trump).toBe(game.trumpCard!.suit);
+      }
+    }
+    expect(found).toBe(true);
+  });
+
+  it('просроченный ход: штраф −10 каждый раз, после третьего игрок выбывает из раунда', () => {
+    const game = createGame({ seed: 3, firstDealer: 0 });
+    game.rounds = [{ mode: 'normal', cards: 3 }];
+    dealCards(game);
+    const player = game.turn;
+    expect(timeoutStrike(game)).toBe('penalty');
+    expect(timeoutStrike(game)).toBe('penalty');
+    expect(game.autoPlay[player]).toBe(false);
+    expect(timeoutStrike(game)).toBe('kicked');
+    expect(game.autoPlay[player]).toBe(true);
+    expect(game.penalties[player]).toBe(-30);
+    playRound(game);
+    const cell = game.sheet[0].cells[player];
+    expect(cell.penalty).toBe(-30);
+    // Очки за раунд включают штраф.
+    expect(cell.points).toBeLessThanOrEqual(cell.tricks * 10 - 30);
+  });
+
+  it('счётчик просрочек сбрасывается, когда игрок походил', () => {
+    const game = createGame({ seed: 3, firstDealer: 0 });
+    game.rounds = [{ mode: 'normal', cards: 3 }];
+    dealCards(game);
+    timeoutStrike(game);
+    expect(game.strikes).toBe(1);
+    placeBid(game, game.turn, allowedBids(game, game.turn)[0]);
+    expect(game.strikes).toBe(0);
   });
 });
 
@@ -173,7 +266,7 @@ function playRandomCard(game: GameState, random: { seed: number }): void {
   const demands = [undefined, ...jokerDemandsFor(game)];
   const mode = nextRandom(random) > 0.5 ? 'high' : 'low';
   const demand = demands[Math.floor(nextRandom(random) * demands.length)];
-  playCard(game, game.turn, card, { mode, demand });
+  playCard(game, game.turn, card, { mode, demand, suit: demand === 'suit' ? 'hearts' : undefined });
 }
 
 function playWholeGame(seed: number, random: boolean): GameState {
@@ -231,7 +324,7 @@ describe('Целая партия', () => {
   it('нелегальный ход отклоняется', () => {
     const game = createGame({ seed: 9, settings: { gameLength: 'short' } });
     dealCards(game);
-    while (game.phase === 'bidding') placeBid(game, game.turn, 0);
+    while (game.phase === 'bidding') placeBid(game, game.turn, allowedBids(game, game.turn)[0]);
     const notMine = parseCard('♥6');
     const other = (game.turn + 1) % PLAYER_COUNT;
     expect(() => playCard(game, other, game.hands[other][0])).toThrow();

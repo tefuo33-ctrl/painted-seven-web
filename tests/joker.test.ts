@@ -6,6 +6,7 @@ import {
   type JokerChoice,
   type Play,
   DEFAULT_SETTINGS,
+  allowedBids,
   cardLabel,
   createGame,
   dealCards,
@@ -142,16 +143,26 @@ describe('Заход с джокера: требование ко всем ос�
 
   it('требовать можно только на заходе; в «Без козыря» козырь потребовать нельзя', () => {
     expect(jokerDemands([], 'hearts')).toEqual(['trump', 'strongest', 'weakest']);
-    expect(jokerDemands([], null)).toEqual(['strongest', 'weakest']);
+    expect(jokerDemands([], null)).toEqual(['suit', 'strongest', 'weakest']);
     expect(jokerDemands(plays('♥10'), 'hearts')).toEqual([]);
     expect(jokerDemands([], 'hearts', { ...DEFAULT_SETTINGS, jokerRequests: false })).toEqual([]);
+  });
+
+  it('без козыря можно потребовать старшую карту выбранной масти', () => {
+    const trick = plays('7♠', { mode: 'high', demand: 'suit', suit: 'hearts' });
+    const withSuit = legalCards({ hand: parseCards('♥6 ♥К ♣Т'), plays: trick, trump: null });
+    expect(labels(withSuit)).toEqual(['К♥']);
+    // Масти нет — можно любую карту.
+    const without = legalCards({ hand: parseCards('♦6 ♣Т'), plays: trick, trump: null });
+    expect(labels(without)).toEqual(['6♦', 'Т♣']);
+    expect(labels(requestedCards(parseCards('♥6 ♥К ♣Т'), 'suit', null, 'clubs'))).toEqual(['Т♣']);
   });
 
   it('движок отклоняет требование, если джокер брошен не на заходе', () => {
     const game = createGame({ seed: 1, firstDealer: 3 });
     game.rounds = [{ mode: 'normal', cards: 9 }];
     dealCards(game);
-    while (game.phase === 'bidding') placeBid(game, game.turn, 1);
+    while (game.phase === 'bidding') placeBid(game, game.turn, allowedBids(game, game.turn)[0]);
     // Кладём джокер в руку второго игрока вместо его первой карты.
     const joker = parseCard('7♠');
     for (const hand of game.hands) {
