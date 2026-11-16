@@ -19,6 +19,8 @@ export interface TableState {
   /** Сколько карт лежит в колоде. */
   deckCount: number;
   trumpCard: Card | null;
+  /** У кого в руке карта козыря (место); null — она лежит на столе рядом с колодой. */
+  trumpSeat: number | null;
   trump: Suit | null;
   /** Карты моей руки, которыми можно ходить (пусто, если ход не мой). */
   playable: Card[];
@@ -31,7 +33,14 @@ export interface HandAnchor {
   position: THREE.Vector3;
 }
 
-const DECK_POSITION = new THREE.Vector3(-2.7, 0.02, -2.1);
+const DECK_POSITION = new THREE.Vector3(-3.0, 0.02, -3.35);
+/** Где лежит открытый козырь, когда он не в руке у раздающего: рядом с колодой. */
+const TRUMP_POSITION = new THREE.Vector3(-1.6, 0.08, -3.85);
+/** Ряд, в который ложатся карты взятки: по центру стола, дальше от меня. */
+const TRICK_ROW_Z = -1.45;
+const TRICK_SPACING = 1.6;
+/** На каком расстоянии от глаз держится мой веер (ближе ближней плоскости камеры нельзя). */
+const HAND_NEAR = 1.6;
 /** Сколько секунд козырь показывается всем после раздачи. */
 const TRUMP_SHOW_SECONDS = 5;
 
@@ -105,14 +114,22 @@ export class TableView {
     };
   }
 
+  /**
+   * Карты взятки ложатся в ряд по центру стола, слева направо в порядке хода,
+   * лицом ко мне — так их видно поверх моей руки. Чуть повёрнуты к тому, кто сходил.
+   */
   private trickPose(seat: number, order: number, card: Card): Pose {
-    const spot = SEATS[seat];
-    const reach = seat % 2 === 0 ? 1.7 : 1.9;
+    const toward = seat === 1 ? 0.12 : seat === 3 ? -0.12 : 0;
     return {
-      position: new THREE.Vector3(Math.sign(spot.x) * reach, 0.06 + order * 0.04, Math.sign(spot.z) * reach - 0.3),
-      quaternion: lying(spot.angle + jitter(cardLabel(card)), true),
-      scale: 1.5, // карты взятки крупнее: их должны прочитать все
+      position: new THREE.Vector3((order - 1.5) * TRICK_SPACING, 0.09 + order * 0.012, TRICK_ROW_Z),
+      quaternion: lying(toward + jitter(cardLabel(card)) * 0.4, true),
+      scale: 1.3, // карты взятки крупнее: их должны прочитать все
     };
+  }
+
+  /** Козырь лежит открытым на столе рядом с колодой. */
+  private trumpRestPose(): Pose {
+    return { position: TRUMP_POSITION.clone(), quaternion: lying(0, true), scale: 1.05 };
   }
 
   /**
@@ -141,23 +158,28 @@ export class TableView {
   private myHandPose(label: string, index: number, count: number, playable: boolean): PoseSource {
     return () => {
       const camera = this.stage.camera;
-      // На вертикальном экране рука ближе к камере, чтобы карты были крупнее.
+      // Раскладку считаем так, будто веер в 5 единицах от глаз (на вертикальном экране — в 4.6),
+      // а потом уменьшаем всё в одно и то же число раз и ставим веер у самых глаз:
+      // на экране карты того же размера, но они всегда над столом и не уходят в сукно,
+      // даже когда игрок смотрит вниз или подаётся вперёд.
       const distance = camera.aspect < 1 ? 4.6 : 5.0;
+      const shrink = HAND_NEAR / distance;
       const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * distance;
       const halfWidth = halfHeight * camera.aspect;
       const spacing = count > 1 ? Math.min(0.78, (halfWidth * 2 - 1.3) / (count - 1)) : 0;
       const offset = index - (count - 1) / 2;
       const raised =
         (playable ? 0.14 : 0) + (this.hovered === label && playable ? 0.14 : 0) + (this.selected === label ? 0.36 : 0);
+      // Веер не у самого края экрана, а чуть выше — над краем стола.
       const local = new THREE.Vector3(
         offset * spacing,
-        -halfHeight + 0.7 - offset * offset * 0.012 + raised,
+        -halfHeight * 0.58 - offset * offset * 0.012 + raised,
         -distance + index * 0.02,
-      );
+      ).multiplyScalar(shrink);
       return {
         position: local.applyMatrix4(camera.matrixWorld),
         quaternion: camera.quaternion.clone().multiply(quat(AXIS_Z, -offset * 0.035)).multiply(quat(AXIS_X, -0.22)),
-        scale: this.selected === label ? 1.08 : 1,
+        scale: (this.selected === label ? 1.08 : 1) * shrink,
       };
     };
   }
@@ -273,8 +295,22 @@ export class TableView {
       card.mesh.visible = false;
     });
 
-    if (options.deal && state.trumpCard) this.showTrump(state.trumpCard, 0.6 + state.hands.flat().length * 0.085);
     if (!state.trumpCard) this.hideTrump();
+    else if (options.deal) this.showTrump(state.trumpCard, 0.6 + state.hands.flat().length * 0.085);
+    else if (this.trumpTimer <= 0) this.restTrump(state.trumpCard, state.trumpSeat);
+  }
+
+  /** Козырь без показа (например, продолжили сохранённую партию): сразу на своё место. */
+  private restTrump(card: Card, seat: number | null): void {
+    if (seat !== null) {
+      this.trumpCard.mesh.visible = false;
+      return;
+    }
+    if (this.trumpCard.mesh.visible && this.trumpCard.face === card) return;
+    this.trumpCard.setFace(card);
+    this.trumpCard.setLook('normal');
+    this.trumpCard.place(this.trumpRestPose());
+    this.trumpCard.mesh.visible = true;
   }
 
   /** Показать всем карту, определившую козырь: она поднимается над столом на несколько секунд. */
@@ -351,15 +387,29 @@ export class TableView {
     for (const card of this.cards) card.update(delta);
     this.trumpCard.update(delta);
 
-    // Показ козыря: по истечении времени карта уходит обратно к колоде и исчезает.
+    // Показ козыря закончился: карта ложится на стол рядом с колодой
+    // или (в раундах по 9 карт) улетает в руку раздающему.
     if (this.trumpTimer > 0) {
       this.trumpTimer -= delta;
       if (this.trumpTimer <= 0) {
-        void this.trumpCard
-          .moveTo({ position: DECK_POSITION.clone().setY(0.4), quaternion: lying(0.35, false), scale: 0.6 }, { duration: 0.45 })
-          .then(() => {
-            if (this.trumpTimer <= 0) this.trumpCard.mesh.visible = false;
+        const seat = this.state?.trumpSeat ?? null;
+        if (seat === null) {
+          this.trumpCard.setLook('normal');
+          void this.trumpCard.moveTo(this.trumpRestPose(), { duration: 0.55, arc: 0.4 });
+        } else {
+          const anchor = seat === 0 ? null : this.handAnchor(seat)?.position;
+          const target: PoseSource = anchor
+            ? () => ({ position: anchor.clone(), quaternion: lying(SEATS[seat].angle, false), scale: 0.8 })
+            : () => {
+                // Ко мне — вниз, в мой веер.
+                const camera = this.stage.camera;
+                const position = new THREE.Vector3(0, -1.4, -5).applyMatrix4(camera.matrixWorld);
+                return { position, quaternion: camera.quaternion.clone(), scale: 1 };
+              };
+          void this.trumpCard.moveTo(target, { duration: 0.5, arc: 0.4 }).then(() => {
+            if (this.trumpTimer <= 0 && (this.state?.trumpSeat ?? null) !== null) this.trumpCard.mesh.visible = false;
           });
+        }
       }
     }
 

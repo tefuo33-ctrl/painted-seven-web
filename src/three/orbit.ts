@@ -1,5 +1,9 @@
-// Камера, которой управляет игрок: вращение вокруг точки, приближение и отдаление.
-// Мышь: зажать и тянуть — вращение, колесо — зум. Телефон: палец — вращение, два пальца — зум.
+// Камера, которой управляет игрок. Два режима:
+//  - «вокруг точки» (гардероб): вращение вокруг персонажа, приближение и отдаление;
+//  - «на месте» (за столом): камера — это глаза игрока. Она не покидает кресло, только
+//    поворачивается (влево-вправо до соседей, немного вверх-вниз) и чуть подаётся вперёд.
+// Мышь: зажать и тянуть — поворот, правая кнопка или колесо — приблизить.
+// Телефон: палец — поворот, два пальца — приблизить.
 
 import * as THREE from 'three';
 
@@ -15,6 +19,15 @@ export interface OrbitView {
   maxDistance: number;
   minElevation: number;
   maxElevation: number;
+  /**
+   * Режим «на месте»: камера стоит в этой точке и смотрит по направлению azimuth/elevation
+   * (azimuth 0 — к центру стола по оси -z, elevation < 0 — вниз). distance — насколько
+   * камера подалась вперёд (0 — сидит ровно), minDistance…maxDistance — пределы.
+   */
+  eye?: THREE.Vector3;
+  /** Пределы поворота влево-вправо (только для режима «на месте»). */
+  minAzimuth?: number;
+  maxAzimuth?: number;
 }
 
 /** Препятствие — вертикальный цилиндр (кресло с игроком, колонна). */
@@ -41,6 +54,9 @@ export class OrbitCamera {
   private moved = 0;
   private dragged = false;
   private lift = 0;
+  /** Зажата правая кнопка мыши — приближаем, пока держат. */
+  private leaning = false;
+  private leanBase = 0;
 
   constructor(camera: THREE.PerspectiveCamera, element: HTMLElement, view: OrbitView) {
     this.camera = camera;
@@ -48,7 +64,17 @@ export class OrbitCamera {
     this.goal = cloneView(view);
     this.current = cloneView(view);
 
+    // Правая кнопка мыши за столом приближает, контекстное меню браузера не нужно.
+    element.addEventListener('contextmenu', (event) => event.preventDefault());
     element.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button === 2) {
+        if (this.goal.eye && !this.leaning) {
+          this.leaning = true;
+          this.leanBase = this.goal.distance;
+          this.goal.distance = this.goal.maxDistance;
+        }
+        return;
+      }
       this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       if (this.pointers.size === 1) {
         this.moved = 0;
@@ -77,6 +103,20 @@ export class OrbitCamera {
         this.dragged = true;
         element.setPointerCapture(event.pointerId);
       }
+      if (this.goal.eye) {
+        // За столом: тянешь вправо — смотришь вправо, тянешь вверх — смотришь вверх.
+        this.goal.azimuth = THREE.MathUtils.clamp(
+          this.goal.azimuth + dx * 0.0032,
+          this.goal.minAzimuth ?? -Infinity,
+          this.goal.maxAzimuth ?? Infinity,
+        );
+        this.goal.elevation = THREE.MathUtils.clamp(
+          this.goal.elevation - dy * 0.0026,
+          this.goal.minElevation,
+          this.goal.maxElevation,
+        );
+        return;
+      }
       this.goal.azimuth -= dx * 0.0055;
       this.goal.elevation = THREE.MathUtils.clamp(
         this.goal.elevation + dy * 0.0045,
@@ -85,15 +125,38 @@ export class OrbitCamera {
       );
     });
     const release = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse' && event.button === 2) {
+        if (this.leaning) {
+          this.leaning = false;
+          this.goal.distance = this.leanBase;
+        }
+        return;
+      }
       this.pointers.delete(event.pointerId);
       this.pinchDistance = 0;
     };
+    // Отпустили правую кнопку за пределами окна — всё равно откидываемся назад.
+    window.addEventListener('pointerup', (event) => {
+      if (event.button === 2 && this.leaning) {
+        this.leaning = false;
+        this.goal.distance = this.leanBase;
+      }
+    });
     element.addEventListener('pointerup', release);
     element.addEventListener('pointercancel', release);
     element.addEventListener(
       'wheel',
       (event) => {
         event.preventDefault();
+        if (this.goal.eye) {
+          // За столом колесо подаёт камеру вперёд-назад в небольших пределах.
+          this.goal.distance = THREE.MathUtils.clamp(
+            this.goal.distance - event.deltaY * 0.004,
+            this.goal.minDistance,
+            this.goal.maxDistance,
+          );
+          return;
+        }
         this.zoomBy(Math.exp(event.deltaY * 0.0012));
       },
       { passive: false },
@@ -106,6 +169,15 @@ export class OrbitCamera {
   }
 
   private zoomBy(factor: number): void {
+    if (this.goal.eye) {
+      // Сводим пальцы — отодвигаемся, разводим — приближаемся.
+      this.goal.distance = THREE.MathUtils.clamp(
+        this.goal.distance + (1 - factor) * 6,
+        this.goal.minDistance,
+        this.goal.maxDistance,
+      );
+      return;
+    }
     this.goal.distance = THREE.MathUtils.clamp(this.goal.distance * factor, this.goal.minDistance, this.goal.maxDistance);
   }
 
@@ -133,6 +205,22 @@ export class OrbitCamera {
 
   /** Приблизиться к точке сцены, чтобы рассмотреть её. */
   focus(point: THREE.Vector3, distance: number): void {
+    if (this.goal.eye) {
+      // За столом: поворачиваемся к предмету и подаёмся к нему, не вставая с места.
+      const to = point.clone().sub(this.goal.eye);
+      this.goal.azimuth = THREE.MathUtils.clamp(
+        Math.atan2(to.x, -to.z),
+        this.goal.minAzimuth ?? -Infinity,
+        this.goal.maxAzimuth ?? Infinity,
+      );
+      this.goal.elevation = THREE.MathUtils.clamp(
+        Math.atan2(to.y, Math.hypot(to.x, to.z)),
+        this.goal.minElevation,
+        this.goal.maxElevation,
+      );
+      this.goal.distance = this.goal.maxDistance;
+      return;
+    }
     this.goal.target.copy(point);
     this.goal.distance = Math.max(this.goal.minDistance * 0.6, distance);
   }
@@ -142,7 +230,7 @@ export class OrbitCamera {
     return (
       Math.abs(this.goal.azimuth - shortest(this.goal.azimuth, this.home.azimuth)) +
       Math.abs(this.goal.elevation - this.home.elevation) +
-      Math.abs(this.goal.distance - this.home.distance) / this.home.distance +
+      Math.abs(this.goal.distance - this.home.distance) / Math.max(this.home.distance, 2) +
       this.goal.target.distanceTo(this.home.target) / 4
     );
   }
@@ -165,6 +253,20 @@ export class OrbitCamera {
     c.elevation += (g.elevation - c.elevation) * k;
     c.distance += (g.distance - c.distance) * k;
     c.target.lerp(g.target, k);
+
+    if (g.eye) {
+      // Режим «на месте»: глаза в кресле, только поворот и лёгкий наклон вперёд.
+      if (!c.eye) c.eye = g.eye.clone();
+      c.eye.lerp(g.eye, k);
+      const cosE = Math.cos(c.elevation);
+      const look = new THREE.Vector3(Math.sin(c.azimuth) * cosE, Math.sin(c.elevation), -Math.cos(c.azimuth) * cosE);
+      this.camera.position.copy(c.eye).addScaledVector(look, c.distance);
+      this.camera.lookAt(this.camera.position.clone().add(look));
+      this.camera.updateMatrixWorld();
+      this.lift = 0;
+      return;
+    }
+    c.eye = undefined;
 
     const cosE = Math.cos(c.elevation);
     const position = this.camera.position.set(
@@ -199,7 +301,7 @@ export class OrbitCamera {
 }
 
 function cloneView(view: OrbitView): OrbitView {
-  return { ...view, target: view.target.clone() };
+  return { ...view, target: view.target.clone(), eye: view.eye?.clone() };
 }
 
 /** Угол `to`, приведённый к ближайшему обороту относительно `from`. */

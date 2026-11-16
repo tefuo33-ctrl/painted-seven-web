@@ -120,15 +120,23 @@ export function createStage(container: HTMLElement): Stage {
   /** Обзор «за столом»: на уровне глаз сидящего игрока, стол — перед ним. */
   function tableView(aspect: number): OrbitView {
     const narrow = THREE.MathUtils.clamp((1.3 - aspect) / 0.8, 0, 1); // 1 — вертикальный телефон
+    const pitch = THREE.MathUtils.lerp(-0.27, -0.4, narrow);
+    // Глаза игрока: он сидит вплотную к столу (край стола — на z = 5.85).
+    // На вертикальном телефоне садимся чуть дальше и выше, чтобы стол помещался в кадр.
     return {
-      target: new THREE.Vector3(0, 0.9, -0.4),
+      target: new THREE.Vector3(0, 0, 0),
+      eye: new THREE.Vector3(0, THREE.MathUtils.lerp(3.8, 4.8, narrow), THREE.MathUtils.lerp(7.5, 8.8, narrow)),
       azimuth: 0,
-      elevation: THREE.MathUtils.lerp(0.3, 0.5, narrow),
-      distance: THREE.MathUtils.lerp(11.4, 15.5, narrow),
-      minDistance: 4.5,
-      maxDistance: 16,
-      minElevation: 0.1,
-      maxElevation: 1.15,
+      elevation: pitch,
+      distance: 0,
+      minDistance: 0,
+      maxDistance: 2.4,
+      // Наклонять голову вверх-вниз нельзя — только поворот влево-вправо.
+      minElevation: pitch,
+      maxElevation: pitch,
+      // Повернуть голову можно до соседа слева или справа, но не дальше.
+      minAzimuth: -0.8,
+      maxAzimuth: 0.8,
     };
   }
 
@@ -246,7 +254,8 @@ export function createStage(container: HTMLElement): Stage {
   }
 
   function awayFromSeat(): boolean {
-    return Math.abs(orbit.azimuthFromHome) > 0.55 || orbit.distanceFromHome > 2.2;
+    // За столом игрок никогда не встаёт с места — своего персонажа и кресло не видно.
+    return false;
   }
 
   // Следим за размером контейнера (а не только окна): так сцена не растягивается при любом изменении.

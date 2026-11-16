@@ -19,6 +19,8 @@ export function tableStateFromGame(game: GameState, me: number): TableState {
     // До раздачи колода целая; после — остаток (в раундах по 9 карт он пуст).
     deckCount: game.dealt ? 36 - currentRoundCards(game) * PLAYER_COUNT : 36,
     trumpCard: game.trumpCard,
+    // В раундах по 9 карт козырь — последняя карта раздающего, она остаётся у него в руке.
+    trumpSeat: game.trumpCard && game.dealt && currentRoundCards(game) * PLAYER_COUNT >= 36 ? seatOf(game.dealer) : null,
     trump: game.trump,
     playable: myTurn ? legalCardsFor(game, me) : [],
     taken: Array.from({ length: PLAYER_COUNT }, (_, seat) => game.taken[playerAt(seat)] ?? 0),

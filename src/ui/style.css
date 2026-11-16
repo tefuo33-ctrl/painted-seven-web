@@ -620,7 +620,7 @@ body.scene-only #app {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 25%;
+  bottom: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -860,6 +860,6 @@ body.scene-only #app {
   }
 
   .bottom {
-    bottom: 26%;
+    bottom: 8px;
   }
 }
