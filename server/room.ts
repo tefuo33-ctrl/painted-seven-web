@@ -1,4 +1,4 @@
-// Комната: четыре места, партия и её ход. Правила исполняются здесь, на сервере, —
+// Комната: до четырёх мест, партия и её ход. Играть можно вдвоём, втроём и вчетвером. Правила исполняются здесь, на сервере, —
 // браузеры получают только «вид игрока» без чужих карт.
 
 import { chooseBid, chooseMove } from '../src/ai/bot';
@@ -17,6 +17,7 @@ import {
   playCard,
   timeoutStrike,
 } from '../src/engine';
+import { MIN_PLAYERS } from '../src/engine/rounds';
 import { type SeatInfo, type ServerMessage, PLAYER_COUNT, viewFor } from '../src/net/protocol';
 import { pickBotNames } from '../src/shared/names';
 import { type Skin, randomGender, randomSkin } from '../src/shared/skin';
@@ -43,7 +44,8 @@ interface Seat {
 
 export class Room {
   readonly code: string;
-  readonly seats: (Seat | null)[] = [null, null, null, null];
+  /** До начала — четыре места (null — свободно). После начала — только игроки партии, по порядку хода. */
+  seats: (Seat | null)[] = [null, null, null, null];
   game: GameState | null = null;
   private settings: Partial<RuleSettings>;
   private hostId: string;
@@ -106,17 +108,32 @@ export class Room {
     if (this.game) this.schedule(); // за отсутствующего ходит бот
   }
 
-  /** Начать партию: пустые места занимают боты со случайными именами и внешностью. */
+  /** Сколько ботов сядет за стол: сколько выбрал создатель, но не больше свободных мест. */
+  private plannedBots(): number {
+    const free = this.seats.filter((seat) => seat === null).length;
+    return Math.min(this.botCount ?? free, free);
+  }
+
+  /**
+   * Начать партию. За стол садятся все люди и выбранное число ботов (со случайными именами
+   * и внешностью). Лишние свободные места убираются: играют вдвоём, втроём или вчетвером.
+   */
   start(clientId: string): void {
     if (clientId !== this.hostId) throw new Error('err.notHost');
     if (this.started) return;
-    const empty = this.seats.flatMap((seat, i) => (seat === null ? [i] : []));
-    const genders = empty.map(() => randomGender());
-    const taken = this.seats.flatMap((seat) => (seat ? [seat.name] : []));
-    const names = pickBotNames(genders, taken);
-    empty.forEach((index, n) => {
-      this.seats[index] = { clientId: null, name: names[n], skin: randomSkin(genders[n]), connection: null, ready: true };
-    });
+    const humans = this.seats.filter((seat): seat is Seat => seat !== null);
+    const botCount = this.plannedBots();
+    if (humans.length + botCount < MIN_PLAYERS) throw new Error('err.needPlayers');
+    const genders = Array.from({ length: botCount }, () => randomGender());
+    const names = pickBotNames(genders, humans.map((seat) => seat.name));
+    const bots: Seat[] = genders.map((gender, n) => ({
+      clientId: null,
+      name: names[n],
+      skin: randomSkin(gender),
+      connection: null,
+      ready: true,
+    }));
+    this.seats = [...humans, ...bots];
     this.game = createGame({
       settings: { ...this.settings, botLevel: this.botLevel },
       playerNames: this.seats.map((seat) => seat!.name),
@@ -148,12 +165,12 @@ export class Room {
     this.schedule();
   }
 
-  /** Создатель комнаты выбирает сложность ботов (только до начала игры). */
-  configure(clientId: string, botLevel: BotLevel): void {
+  /** Создатель комнаты выбирает сложность ботов и их число (только до начала игры). */
+  configure(clientId: string, botLevel?: BotLevel, bots?: number): void {
     if (clientId !== this.hostId) throw new Error('err.notHost');
     if (this.started) return;
-    if (!['easy', 'normal', 'hard', 'expert'].includes(botLevel)) return;
-    this.botLevel = botLevel;
+    if (botLevel !== undefined && ['easy', 'normal', 'hard', 'expert'].includes(botLevel)) this.botLevel = botLevel;
+    if (Number.isInteger(bots) && bots! >= 0 && bots! <= PLAYER_COUNT) this.botCount = bots!;
     this.broadcastRoom();
   }
 
@@ -204,7 +221,7 @@ export class Room {
         after(BEFORE_DEAL, () => {
           dealCards(game);
           // Ждём, пока у игроков доиграет анимация раздачи.
-          this.dealPause = 1600 + currentRound(game).cards * PLAYER_COUNT * 80;
+          this.dealPause = 1600 + currentRound(game).cards * this.seats.length * 80;
         });
         break;
       case 'bidding':
@@ -256,6 +273,8 @@ export class Room {
 
   private dealPause = 0;
   private botLevel: BotLevel = 'normal';
+  /** Сколько ботов посадить (null — занять все свободные места). */
+  private botCount: number | null = null;
 
   private takeDealPause(): number {
     const pause = this.dealPause;
@@ -283,13 +302,12 @@ export class Room {
       seat.connection.send({
         t: 'room',
         code: this.code,
-        seats: Array.from({ length: PLAYER_COUNT }, (_, i) => this.seatInfo((index + i) % PLAYER_COUNT)),
+        seats: Array.from({ length: this.seats.length }, (_, i) => this.seatInfo((index + i) % this.seats.length)),
         host: seat.clientId === this.hostId,
         started: this.started,
         botLevel: this.botLevel,
-        bots: this.started
-          ? this.seats.filter((s) => s?.clientId === null).length
-          : this.seats.filter((s) => s === null).length,
+        bots: this.started ? this.seats.filter((s) => s?.clientId === null).length : this.plannedBots(),
+        freeSeats: this.started ? 0 : this.seats.filter((s) => s === null).length,
       });
     });
   }

@@ -36,7 +36,7 @@ import { gfx, saveGfx } from '../three/gfx';
 import { Players } from '../three/players';
 import type { Stage } from '../three/stage';
 import { SEATS } from '../three/table';
-import { tableStateFromGame } from '../three/tableState';
+import { seatOfPlayer, skinsBySeat, tableStateFromGame } from '../three/tableState';
 import { TableView } from '../three/tableView';
 import { TurnMarker } from '../three/turnMarker';
 import { displayName, loadProfile, saveProfile } from './profile';
@@ -116,6 +116,11 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   };
   let skins: (Skin | null)[] = [];
 
+  /** Кресло, в котором сидит игрок (вдвоём и втроём кресла заняты не все). */
+  function seatOf(game: GameState, player: number): number {
+    return seatOfPlayer(game.playerNames.length, player);
+  }
+
   /** Номер «запуска» игры. Меняется при выходе в меню — старые таймеры это видят и молчат. */
   let session = 0;
   /** Идёт ли сейчас автоматическое действие (бот думает, летят карты). */
@@ -147,9 +152,27 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   let lastTrickLength = 0;
 
   /** Привести 3D-стол к состоянию партии. */
+  /**
+   * Порядок карт в моём веере, который игрок выбрал сам (перетаскиванием).
+   * Новые карты (после раздачи) встают в обычном порядке.
+   */
+  let handOrder: string[] = [];
+  function orderHand<T extends { suit: string; rank: number } | null>(hand: T[]): T[] {
+    if (handOrder.length === 0) return hand;
+    const place = (card: T) => {
+      const index = card ? handOrder.indexOf(cardLabel(card as never)) : -1;
+      return index < 0 ? handOrder.length : index;
+    };
+    return hand
+      .map((card, i) => ({ card, i }))
+      .sort((a, b) => place(a.card) - place(b.card) || a.i - b.i)
+      .map(({ card }) => card);
+  }
+
   function syncTable(options: { deal?: boolean } = {}): void {
     const game = ui.game;
     if (!game) return;
+    if (options.deal) handOrder = []; // новая раздача — карты в обычном порядке
     // Звук, когда на стол легла новая карта; у джокера — свой.
     if (game.trick.length > lastTrickLength) {
       if (isJoker(game.trick[game.trick.length - 1].card)) playJokerSound();
@@ -158,8 +181,11 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     lastTrickLength = game.trick.length;
     if (options.deal) playDealSound(currentRound(game).cards * 4);
     table.selected = ui.selected;
-    table.sync(tableStateFromGame(game, HUMAN), { deal: options.deal, firstSeat: firstPlayer(game) });
-    const active = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
+    const state = tableStateFromGame(game, HUMAN);
+    state.hands[0] = orderHand(state.hands[0]);
+    table.sync(state, { deal: options.deal, firstSeat: seatOf(game, firstPlayer(game)) });
+    const turn = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
+    const active = turn === null ? null : seatOf(game, turn);
     marker.show(ui.screen === 'game' ? active : null);
     players.lookAtSeat(active);
   }
@@ -294,7 +320,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
             placeBid(game, game.turn, chooseBid(game, game.turn, level));
           } else {
             const move = chooseMove(game, game.turn, level);
-            players.throwCard(game.turn);
+            players.throwCard(seatOf(game, game.turn));
             playCard(game, game.turn, move.card, move.joker);
           }
         } else if (game.phase === 'trickEnd') {
@@ -302,7 +328,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
           await Promise.race([sleep(TRICK_DELAY), new Promise<void>((resolve) => (skipTrickWait = resolve))]);
           skipTrickWait = null;
           if (!alive()) break;
-          players.nod(game.trickWinner ?? 0);
+          players.nod(seatOf(game, game.trickWinner ?? 0));
           playTrickSound();
           await table.collectTrick(game.trickWinner ?? 0);
           if (!alive()) break;
@@ -345,6 +371,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       started: ui.online?.started ?? false,
       botLevel: ui.online?.botLevel ?? 'normal',
       bots: ui.online?.bots ?? 0,
+      freeSeats: ui.online?.freeSeats ?? 0,
       error: key,
     };
     render();
@@ -375,7 +402,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       lobbyError('err.noServer');
       return null;
     }
-    ui.online = { status: 'connecting', code: null, seats: [], host: false, started: false, botLevel: 'normal', bots: 0, error: null };
+    ui.online = { status: 'connecting', code: null, seats: [], host: false, started: false, botLevel: 'normal', bots: 0, freeSeats: 0, error: null };
     render();
     try {
       net = await connect(url, { onMessage: onServerMessage, onClose: onServerClose });
@@ -414,11 +441,12 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         started: message.started,
         botLevel: message.botLevel,
         bots: message.bots,
+        freeSeats: message.freeSeats ?? 0,
         error: null,
       };
       if (message.started && skins.length === 0) {
         skins = message.seats.map((seat) => (seat ? sanitizeSkin(seat.skin) : null));
-        players.seat(skins);
+        players.seat(skinsBySeat(skins));
       }
       render(); // лобби и окно итогов показывают, кто готов
       return;
@@ -441,12 +469,12 @@ export function startApp(root: HTMLElement, stage: Stage): void {
 
         // Взятка сыграна и на сервере уже забрана — показываем, как она улетает.
         if (previous?.phase === 'trickEnd' && !(next.phase === 'trickEnd' && next.trick.length === 4)) {
-          players.nod(previous.trickWinner ?? 0);
+          players.nod(seatOf(previous, previous.trickWinner ?? 0));
           playTrickSound();
           await table.collectTrick(previous.trickWinner ?? 0);
         }
         if (previous && next.trick.length > previous.trick.length) {
-          players.throwCard(next.trick[next.trick.length - 1].player);
+          players.throwCard(seatOf(next, next.trick[next.trick.length - 1].player));
         }
         // Штраф за просроченный ход — сообщаем тому, кого оштрафовали.
         if (previous && next.penalties[HUMAN] < previous.penalties[HUMAN] && next.roundIndex === previous.roundIndex) {
@@ -562,7 +590,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
 
   function startGame(game: GameState, tableSkins: (Skin | null)[]): void {
     skins = tableSkins.map((skin) => (skin ? sanitizeSkin(skin) : null));
-    players.seat(skins);
+    players.seat(skinsBySeat(skins));
     session++;
     working = false;
     lastTrickLength = game.trick.length;
@@ -769,6 +797,35 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     }
   });
 
+  // Перестановка карт в руке: зажать карту и тянуть влево или вправо.
+  let dragging: { label: string; startX: number; moved: boolean } | null = null;
+  stage.canvas.addEventListener('pointerdown', (event) => {
+    if (ui.screen !== 'game' || ui.modal.kind !== 'none' || event.button !== 0) return;
+    const label = table.pick(event.clientX, event.clientY);
+    dragging = label ? { label, startX: event.clientX, moved: false } : null;
+  });
+  stage.canvas.addEventListener('pointermove', (event) => {
+    if (!dragging) return;
+    if (!dragging.moved && Math.abs(event.clientX - dragging.startX) < 14) return;
+    dragging.moved = true;
+    const positions = table.handScreenX();
+    const others = positions.filter((p) => p.label !== dragging!.label);
+    // Новое место — сколько других карт левее пальца.
+    const index = others.filter((p) => p.x < event.clientX).length;
+    const order = others.map((p) => p.label);
+    order.splice(index, 0, dragging.label);
+    if (order.join() !== positions.map((p) => p.label).join()) {
+      handOrder = order;
+      syncTable();
+    }
+  });
+  const stopDragging = () => {
+    if (dragging?.moved) playSlideSound();
+    dragging = null;
+  };
+  stage.canvas.addEventListener('pointerup', stopDragging);
+  stage.canvas.addEventListener('pointercancel', stopDragging);
+
   // Наведение мыши: карта, которой можно ходить, приподнимается.
   stage.canvas.addEventListener('pointermove', (event) => {
     if (ui.screen !== 'game' || event.pointerType === 'touch') return;
@@ -805,6 +862,10 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     }
     if (data.roomLevel !== undefined) {
       net?.send({ t: 'config', botLevel: element.value as BotLevel });
+      return;
+    }
+    if (data.roomBots !== undefined) {
+      net?.send({ t: 'config', bots: Number(element.value) });
       return;
     }
     if (data.gfx) {

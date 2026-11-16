@@ -68,7 +68,7 @@ wss.on('connection', (socket: WebSocket) => {
         room?.ready(clientId);
         break;
       case 'config':
-        room?.configure(clientId, message.botLevel);
+        room?.configure(clientId, message.botLevel, message.bots);
         break;
       case 'leave':
         room?.leave(clientId);

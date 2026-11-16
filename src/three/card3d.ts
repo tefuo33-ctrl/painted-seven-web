@@ -39,7 +39,7 @@ function getMaterials(): Record<Look, THREE.MeshLambertMaterial> {
       dim: retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0x5a5866 })),
       // Подсвеченная карта: ею можно ходить.
       lit: retro(
-        new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x3a2c12, emissiveMap: map, color: 0xc8c4bc }),
+        new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x4a3818, emissiveMap: map, color: 0xd8d4cc }),
       ),
       // Выбранная карта: светится ярче остальных.
       chosen: retro(
@@ -74,9 +74,10 @@ function getHalo() {
     const material = (color: number, opacity: number) =>
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, fog: false, toneMapped: false });
     haloParts = {
-      geometry: new THREE.PlaneGeometry(CARD_W + 0.14, CARD_H + 0.14),
-      lit: material(0xf2c14e, 0.85),
-      chosen: material(0xffe28a, 1),
+      // Тонкая и полупрозрачная кайма — заметна, но не кричит.
+      geometry: new THREE.PlaneGeometry(CARD_W + 0.06, CARD_H + 0.06),
+      lit: material(0xe0b450, 0.35),
+      chosen: material(0xffe28a, 0.7),
     };
   }
   return haloParts;

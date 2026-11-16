@@ -23,7 +23,8 @@ export type ClientMessage =
   | { t: 'join'; clientId: string; code: string; name: string; skin: Skin }
   | { t: 'start' }
   /** Создатель комнаты меняет сложность ботов до начала игры. */
-  | { t: 'config'; botLevel: BotLevel }
+  /** Настройки комнаты (только создатель, до начала): сложность и сколько ботов посадить. */
+  | { t: 'config'; botLevel?: BotLevel; bots?: number }
   /** Игрок готов к следующему раунду. */
   | { t: 'ready' }
   | { t: 'bid'; bid: number }
@@ -40,9 +41,11 @@ export type ServerMessage =
       /** Создатель комнаты — получатель? Только он может начать игру. */
       host: boolean;
       started: boolean;
-      /** Сложность ботов и сколько ботов займёт свободные места. */
+      /** Сложность ботов и сколько ботов сядет за стол. */
       botLevel: BotLevel;
       bots: number;
+      /** Сколько мест свободно (столько ботов можно посадить самое большее). */
+      freeSeats: number;
     }
   /** `now` — время сервера: по нему браузер показывает общий для всех таймер хода. */
   | { t: 'state'; game: GameState; now: number }
@@ -62,7 +65,8 @@ function rotate<T>(list: T[], by: number): T[] {
  *  - состояние генератора случайных чисел скрыто (по нему можно было бы вычислить раздачу).
  */
 export function viewFor(game: GameState, me: number): GameState {
-  const seatOf = (player: number) => (player - me + PLAYER_COUNT) % PLAYER_COUNT;
+  const count = game.playerNames.length;
+  const seatOf = (player: number) => (player - me + count) % count;
   return {
     ...game,
     rng: { seed: 0 },

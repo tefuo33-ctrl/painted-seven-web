@@ -17,7 +17,6 @@ import {
   type JokerDemand,
   type Play,
   type Suit,
-  PLAYER_COUNT,
   SUITS,
   allowedBids,
   createDeck,
@@ -29,6 +28,7 @@ import {
   jokerDemandsFor,
   legalCardsFor,
   playCard,
+  playerCount,
   sameCard,
   scoreRound,
   trickWinner,
@@ -169,7 +169,7 @@ function ruleMove(state: GameState, player: number, memory: boolean): BotMove {
   const joker = legal.find(isJoker);
   const normal = legal.filter((c) => !isJoker(c)).sort(byPower(trump));
   const isLead = state.trick.length === 0;
-  const isLast = state.trick.length === PLAYER_COUNT - 1;
+  const isLast = state.trick.length === playerCount(state) - 1;
   const unseen = memory ? unseenCards(state, player) : null;
   /** Карта — старшая из оставшихся в своей масти. */
   const isBoss = (card: Card) => (unseen ? higherUnseen(card, unseen) === 0 : card.rank === 14);
@@ -258,13 +258,13 @@ function sampleWorld(state: GameState, player: number, random: Random): GameStat
   const round = currentRound(state);
   // В раундах по 9 карт козырь показала последняя карта раздающего — она точно у него.
   const dealerHolds =
-    round.cards === 9 &&
+    round.cards * playerCount(state) >= 36 &&
     state.trumpCard !== null &&
     state.dealer !== player &&
     pool.some((c) => sameCard(c, state.trumpCard!));
   if (dealerHolds) pool = pool.filter((c) => !sameCard(c, state.trumpCard!));
 
-  for (let other = 0; other < PLAYER_COUNT; other++) {
+  for (let other = 0; other < playerCount(state); other++) {
     if (other === player) continue;
     const size = state.hands[other].length;
     const hand: Card[] = [];
@@ -288,9 +288,10 @@ function playOut(world: GameState, player: number, selfish: number): number {
   const mode = currentRound(world).mode;
   const score = (p: number) => scoreRound(mode, hasBidding(mode) ? (world.bids[p] ?? 0) : null, world.taken[p], world.settings).points;
   let others = 0;
-  for (let p = 0; p < PLAYER_COUNT; p++) if (p !== player) others += score(p);
+  const players = playerCount(world);
+  for (let p = 0; p < players; p++) if (p !== player) others += score(p);
   // Эксперт слегка учитывает и чужой результат: мешать соперникам тоже выгодно.
-  return score(player) - (others / (PLAYER_COUNT - 1)) * selfish;
+  return score(player) - (others / (players - 1)) * selfish;
 }
 
 /** Все разумные ходы: каждая разрешённая карта; джокер — в обоих режимах. */
@@ -347,7 +348,7 @@ function searchBid(state: GameState, player: number, samples: number, selfish: n
   for (let s = 0; s < samples; s++) {
     const world = sampleWorld(state, player, random);
     // Те, кто ещё не заказал, в этом мире заказывают по силе своей (случайной) руки.
-    for (let other = 0; other < PLAYER_COUNT; other++) {
+    for (let other = 0; other < playerCount(world); other++) {
       if (other !== player && world.bids[other] === null) {
         world.bids[other] = Math.round(handStrength(world.hands[other], world.trump));
       }
@@ -385,10 +386,10 @@ export function chooseBid(state: GameState, player: number, level?: BotLevel, ra
   // «Тёмная»: карт ещё нет. В среднем на игрока приходится четверть взяток;
   // сильные боты учитывают, сколько уже заказали другие.
   if (!state.dealt) {
-    let wanted = round.cards / PLAYER_COUNT;
+    let wanted = round.cards / playerCount(state);
     if (depth === 'hard' || depth === 'expert') {
       const placed = state.bids.filter((b): b is number => b !== null);
-      const left = PLAYER_COUNT - placed.length;
+      const left = playerCount(state) - placed.length;
       const sum = placed.reduce((a, b) => a + b, 0);
       wanted = Math.max(0, (round.cards - sum) / Math.max(1, left)) * 0.85;
     }

@@ -1,29 +1,55 @@
 // Переводит состояние партии из движка в то, что видит один игрок за 3D-столом.
 
-import { type GameState, PLAYER_COUNT, legalCardsFor } from '../engine';
+import { type Card, type GameState, legalCardsFor } from '../engine';
 import type { TableState } from './tableView';
 
 /** `me` — номер игрока, глазами которого смотрим. Его место — 0, остальные по часовой стрелке. */
+/**
+ * Какое кресло занимает игрок. Кресел всегда четыре; вдвоём садятся друг напротив друга,
+ * втроём — я и соседи слева и справа (дальнее кресло пустует). Порядок хода — по часовой.
+ */
+const SEAT_LAYOUT: Record<number, number[]> = { 2: [0, 2], 3: [0, 1, 3], 4: [0, 1, 2, 3] };
+
+/** Кресло игрока `player` (номер относительно меня: 0 — я) при `players` игроках. */
+export function seatOfPlayer(players: number, player: number): number {
+  return (SEAT_LAYOUT[players] ?? SEAT_LAYOUT[4])[player] ?? player;
+}
+
+/** Внешность игроков (по номерам игроков) → по креслам; пустые кресла — null. */
+export function skinsBySeat<T>(skins: (T | null)[]): (T | null)[] {
+  const result: (T | null)[] = [null, null, null, null];
+  skins.forEach((skin, player) => {
+    result[seatOfPlayer(skins.length, player)] = skin;
+  });
+  return result;
+}
+
 export function tableStateFromGame(game: GameState, me: number): TableState {
-  const playerAt = (seat: number) => (me + seat) % PLAYER_COUNT;
-  const seatOf = (player: number) => (player - me + PLAYER_COUNT) % PLAYER_COUNT;
+  const count = game.playerNames.length;
+  const relative = (player: number) => (player - me + count) % count;
+  const seatOf = (player: number) => seatOfPlayer(count, relative(player));
   const myTurn = game.phase === 'playing' && game.turn === me;
+  const bySeat = <T>(value: (player: number) => T, empty: T): T[] => {
+    const result: T[] = [empty, empty, empty, empty];
+    for (let player = 0; player < count; player++) result[seatOf(player)] = value(player);
+    return result;
+  };
 
   return {
-    hands: Array.from({ length: PLAYER_COUNT }, (_, seat) => {
-      const hand = game.hands[playerAt(seat)] ?? [];
+    hands: bySeat((player) => {
+      const hand = game.hands[player] ?? [];
       // Чужие карты игроку неизвестны.
-      return seat === 0 ? hand.slice() : hand.map(() => null);
-    }),
+      return player === me ? hand.slice() : hand.map(() => null);
+    }, [] as (Card | null)[]),
     trick: game.trick.map((play) => ({ seat: seatOf(play.player), card: play.card })),
-    // До раздачи колода целая; после — остаток (в раундах по 9 карт он пуст).
-    deckCount: game.dealt ? 36 - currentRoundCards(game) * PLAYER_COUNT : 36,
+    // До раздачи колода целая; после — остаток (в раундах по 9 карт вчетвером он пуст).
+    deckCount: game.dealt ? 36 - currentRoundCards(game) * count : 36,
     trumpCard: game.trumpCard,
     // В раундах по 9 карт козырь — последняя карта раздающего, она остаётся у него в руке.
-    trumpSeat: game.trumpCard && game.dealt && currentRoundCards(game) * PLAYER_COUNT >= 36 ? seatOf(game.dealer) : null,
+    trumpSeat: game.trumpCard && game.dealt && currentRoundCards(game) * count >= 36 ? seatOf(game.dealer) : null,
     trump: game.trump,
     playable: myTurn ? legalCardsFor(game, me) : [],
-    taken: Array.from({ length: PLAYER_COUNT }, (_, seat) => game.taken[playerAt(seat)] ?? 0),
+    taken: bySeat((player) => game.taken[player] ?? 0, 0),
   };
 }
 

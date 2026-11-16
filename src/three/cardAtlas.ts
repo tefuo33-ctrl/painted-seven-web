@@ -177,11 +177,12 @@ function rankText(rank: Rank): string {
 function drawIndex(ctx: CanvasRenderingContext2D, card: Card, color: string): void {
   const text = rankText(card.rank);
   ctx.fillStyle = color;
-  ctx.font = `bold ${text.length > 1 ? 15 : 18}px Georgia, 'Times New Roman', serif`;
+  // Индекс стоит на поле карты — между рамкой и картинкой (x 5…15), ни на что не залезая.
+  ctx.font = `bold ${text.length > 1 ? 9 : 12}px Georgia, 'Times New Roman', serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText(text, 11.5, 20);
-  drawSuit(ctx, card.suit, 11.5, 30, 5);
+  ctx.fillText(text, 10.5, 16);
+  drawSuit(ctx, card.suit, 10.5, 23, 3.6);
 }
 
 function drawFace(ctx: CanvasRenderingContext2D, card: Card): void {
@@ -223,24 +224,24 @@ function drawFace(ctx: CanvasRenderingContext2D, card: Card): void {
     // Картинка в рамке с золотой каймой.
     ctx.save();
     ctx.beginPath();
-    ctx.rect(15, 22, CELL_W - 30, CELL_H - 44);
+    ctx.rect(16, 22, CELL_W - 32, CELL_H - 44);
     ctx.clip();
     ctx.fillStyle = card.suit === 'hearts' || card.suit === 'diamonds' ? '#f1dccf' : '#dcdfe6';
-    ctx.fillRect(15, 22, CELL_W - 30, CELL_H - 44);
+    ctx.fillRect(16, 22, CELL_W - 32, CELL_H - 44);
     ctx.translate(-3, -4);
     drawPortrait(ctx, card.rank, card.suit);
     ctx.restore();
     ctx.strokeStyle = hex(PALETTE.goldDark);
     ctx.lineWidth = 0.8;
-    ctx.strokeRect(15, 22, CELL_W - 30, CELL_H - 44);
+    ctx.strokeRect(16, 22, CELL_W - 32, CELL_H - 44);
   } else {
     for (const [col, row] of PIPS[card.rank]) {
-      drawSuit(ctx, card.suit, CELL_W / 2 + col * 11, 24 + row * 48, 5.6);
+      drawSuit(ctx, card.suit, CELL_W / 2 + col * 9.5, 24 + row * 48, 5.4);
     }
   }
   if (joker) drawStar(ctx, CELL_W / 2, CELL_H / 2, 7);
 
-  // Индексы в двух углах: левый верхний и перевёрнутый правый нижний.
+  // Индексы в двух углах, как на настоящей карте: левый верхний и перевёрнутый правый нижний.
   drawIndex(ctx, card, main);
   ctx.save();
   ctx.translate(CELL_W, CELL_H);

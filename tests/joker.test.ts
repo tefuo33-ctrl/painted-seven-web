@@ -142,7 +142,7 @@ describe('Заход с джокера: требование ко всем ос�
   });
 
   it('требовать можно только на заходе; в «Без козыря» козырь потребовать нельзя', () => {
-    expect(jokerDemands([], 'hearts')).toEqual(['trump', 'strongest', 'weakest']);
+    expect(jokerDemands([], 'hearts')).toEqual(['trump', 'suit', 'strongest', 'weakest']);
     expect(jokerDemands([], null)).toEqual(['suit', 'strongest', 'weakest']);
     expect(jokerDemands(plays('♥10'), 'hearts')).toEqual([]);
     expect(jokerDemands([], 'hearts', { ...DEFAULT_SETTINGS, jokerRequests: false })).toEqual([]);

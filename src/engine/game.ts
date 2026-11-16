@@ -9,6 +9,7 @@ import { type Card, type Suit, SUITS, createDeck, isJoker, sameCard } from './ca
 import { type Rng, deal, randomInt, shuffle } from './deck';
 import {
   type RoundSpec,
+  MIN_PLAYERS,
   PLAYER_COUNT,
   bidsBeforeDeal,
   buildRoundSequence,
@@ -103,20 +104,28 @@ export interface NewGameOptions {
   firstDealer?: number;
 }
 
-function next(player: number): number {
-  return (player + 1) % PLAYER_COUNT;
+/** Сколько игроков в партии (2–4). */
+export function playerCount(state: Pick<GameState, 'playerNames'>): number {
+  return state.playerNames.length;
+}
+
+function next(state: GameState, player: number): number {
+  return (player + 1) % playerCount(state);
 }
 
 export function createGame(options: NewGameOptions = {}): GameState {
   const settings: RuleSettings = { ...DEFAULT_SETTINGS, ...options.settings };
   const rng: Rng = { seed: options.seed ?? Math.floor(Math.random() * 2 ** 31) };
+  const playerNames = (options.playerNames ?? ['Вы', 'Аня', 'Борис', 'Вера']).slice(0, PLAYER_COUNT);
+  if (playerNames.length < MIN_PLAYERS) throw new Error('Нужно хотя бы два игрока');
+  const players = playerNames.length;
   const state: GameState = {
     settings,
     rng,
-    playerNames: options.playerNames ?? ['Вы', 'Аня', 'Борис', 'Вера'],
-    rounds: buildRoundSequence(settings.gameLength),
+    playerNames,
+    rounds: buildRoundSequence(settings.gameLength, players),
     roundIndex: 0,
-    dealer: options.firstDealer ?? randomInt(rng, 0, PLAYER_COUNT - 1),
+    dealer: options.firstDealer ?? randomInt(rng, 0, players - 1),
     phase: 'deal',
     turn: 0,
     dealt: false,
@@ -128,7 +137,7 @@ export function createGame(options: NewGameOptions = {}): GameState {
     trick: [],
     trickWinner: null,
     seen: [],
-    passStreak: Array.from({ length: PLAYER_COUNT }, () => 0),
+    passStreak: Array.from({ length: players }, () => 0),
     penalties: [],
     strikes: 0,
     autoPlay: [],
@@ -144,16 +153,16 @@ export function currentRound(state: GameState): RoundSpec {
 }
 
 /**
- * Сосед раздающего по часовой: он первым получает карту, первым заходит
- * и заказывает ПОСЛЕДНИМ (раньше этот игрок срезал колоду).
+ * Сосед раздающего по часовой: он первым получает карту, первым заказывает и первым заходит.
+ * Раздающий заказывает последним.
  */
 export function firstPlayer(state: GameState): number {
-  return next(state.dealer);
+  return next(state, state.dealer);
 }
 
-/** Кто заказывает первым: следующий за «первым игроком». Тогда первый игрок заказывает последним. */
+/** Кто заказывает первым — тот же сосед раздающего по часовой. */
 export function firstBidder(state: GameState): number {
-  return next(firstPlayer(state));
+  return firstPlayer(state);
 }
 
 /** Начался новый ход: сбрасываем счётчик просрочек. Время ставит тот, кто ведёт партию. */
@@ -166,16 +175,16 @@ function newTurn(state: GameState, player: number): void {
 function startRound(state: GameState): void {
   const round = currentRound(state);
   state.dealt = false;
-  state.hands = Array.from({ length: PLAYER_COUNT }, () => []);
+  state.hands = Array.from({ length: playerCount(state) }, () => []);
   state.trump = null;
   state.trumpCard = null;
-  state.bids = Array.from({ length: PLAYER_COUNT }, () => null);
-  state.taken = Array.from({ length: PLAYER_COUNT }, () => 0);
+  state.bids = Array.from({ length: playerCount(state) }, () => null);
+  state.taken = Array.from({ length: playerCount(state) }, () => 0);
   state.trick = [];
   state.trickWinner = null;
   state.seen = [];
-  state.penalties = Array.from({ length: PLAYER_COUNT }, () => 0);
-  state.autoPlay = Array.from({ length: PLAYER_COUNT }, () => false);
+  state.penalties = Array.from({ length: playerCount(state) }, () => 0);
+  state.autoPlay = Array.from({ length: playerCount(state) }, () => false);
   // В «Тёмной» сначала заказ, потом раздача.
   state.phase = bidsBeforeDeal(round.mode) ? 'bidding' : 'deal';
   newTurn(state, state.phase === 'bidding' ? firstBidder(state) : firstPlayer(state));
@@ -188,7 +197,7 @@ export function dealCards(state: GameState): void {
 
   const deck = shuffle(createDeck(), state.rng);
 
-  const result = deal(deck, PLAYER_COUNT, round.cards, state.dealer);
+  const result = deal(deck, playerCount(state), round.cards, state.dealer);
   state.hands = result.hands;
   state.dealt = true;
 
@@ -218,7 +227,8 @@ export function bidBan(state: GameState, player: number, bid: number): BidBan | 
   const { settings } = state;
   const cards = currentRound(state).cards;
   const sumBanned = (value: number) => {
-    if (!settings.forbidSumEqualsCards || player !== firstPlayer(state)) return false;
+    // Ограничен последний заказывающий — раздающий.
+    if (!settings.forbidSumEqualsCards || player !== state.dealer) return false;
     const sum = state.bids.reduce<number>((s, b, i) => s + (i === player ? 0 : (b ?? 0)), 0);
     return sum + value === cards;
   };
@@ -249,7 +259,7 @@ export function placeBid(state: GameState, player: number, bid: number): void {
     state.phase = state.dealt ? 'playing' : 'deal';
     newTurn(state, firstPlayer(state));
   } else {
-    newTurn(state, next(player));
+    newTurn(state, next(state, player));
   }
 }
 
@@ -302,12 +312,12 @@ export function playCard(
   hand.splice(hand.findIndex((c) => sameCard(c, card)), 1);
   state.trick.push(play);
 
-  if (state.trick.length === PLAYER_COUNT) {
+  if (state.trick.length === playerCount(state)) {
     state.trickWinner = trickWinner(state.trick, state.trump);
     state.phase = 'trickEnd';
     state.strikes = 0;
   } else {
-    newTurn(state, next(player));
+    newTurn(state, next(state, player));
   }
 }
 
@@ -334,7 +344,7 @@ function finishRound(state: GameState): void {
   const round = currentRound(state);
   const previous = state.sheet[state.sheet.length - 1];
   const cells: SheetCell[] = [];
-  for (let player = 0; player < PLAYER_COUNT; player++) {
+  for (let player = 0; player < playerCount(state); player++) {
     const bid = hasBidding(round.mode) ? state.bids[player] : null;
     const score = scoreRound(round.mode, bid, state.taken[player], state.settings);
     const penalty = state.penalties[player] ?? 0;
@@ -380,7 +390,7 @@ export function nextRound(state: GameState): void {
     return;
   }
   state.roundIndex++;
-  state.dealer = next(state.dealer);
+  state.dealer = next(state, state.dealer);
   startRound(state);
 }
 
@@ -389,7 +399,7 @@ export function totals(state: GameState): number[] {
   const last = state.sheet[state.sheet.length - 1];
   return last
     ? last.cells.map((c) => c.total)
-    : Array.from({ length: PLAYER_COUNT }, () => 0);
+    : Array.from({ length: playerCount(state) }, () => 0);
 }
 
 /** Победители — все, у кого максимум очков (при равенстве победу делят). */

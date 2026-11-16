@@ -167,8 +167,10 @@ export class TableView {
       // на экране карты того же размера, но они всегда над столом и не уходят в сукно,
       // даже когда игрок смотрит вниз или подаётся вперёд.
       const distance = camera.aspect < 1 ? 4.6 : 5.0;
+      // Приближение сужает угол обзора — веер уменьшаем во столько же раз, чтобы он не «рос».
+      const zoom = this.stage.zoom();
       const shrink = HAND_NEAR / distance;
-      const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * distance;
+      const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * distance * zoom;
       const halfWidth = halfHeight * camera.aspect;
       const spacing = count > 1 ? Math.min(0.78, (halfWidth * 2 - 1.3) / (count - 1)) : 0;
       const offset = index - (count - 1) / 2;
@@ -180,10 +182,12 @@ export class TableView {
         -halfHeight * 0.7 - offset * offset * 0.012 + raised,
         -distance + index * 0.02,
       ).multiplyScalar(shrink);
+      local.x /= zoom;
+      local.y /= zoom;
       return {
         position: local.applyMatrix4(camera.matrixWorld),
         quaternion: camera.quaternion.clone().multiply(quat(AXIS_Z, -offset * 0.035)).multiply(quat(AXIS_X, -0.22)),
-        scale: (this.selected === label ? 1.08 : 1) * shrink,
+        scale: ((this.selected === label ? 1.08 : 1) * shrink) / zoom,
       };
     };
   }
@@ -396,6 +400,17 @@ export class TableView {
     const meshes = this.cards.filter((card) => card.mesh.visible && mine.has(card.key)).map((card) => card.mesh);
     const hit = raycaster.intersectObjects(meshes, false)[0];
     return hit ? (hit.object.userData.card3d as Card3D).key.slice(2) : null;
+  }
+
+  /** Где на экране (по горизонтали) стоят карты моей руки — по порядку веера. */
+  handScreenX(): { label: string; x: number }[] {
+    const mine = this.state?.hands[0] ?? [];
+    return mine.flatMap((card) => {
+      if (!card) return [];
+      const label = cardLabel(card);
+      const card3d = this.cards.find((c) => c.key === `c:${label}`);
+      return card3d ? [{ label, x: this.stage.toScreen(card3d.mesh.position).x }] : [];
+    });
   }
 
   /** Есть ли карты в полёте. */

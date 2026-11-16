@@ -72,6 +72,38 @@ describe('Комната', () => {
     room.dispose();
   });
 
+  it('создатель выбирает, сколько ботов посадить: можно играть вдвоём', () => {
+    const room = new Room('ABCDE', 'host', { gameLength: 'short' });
+    const host = fakeConnection();
+    const guest = fakeConnection();
+    room.join('host', 'Тим', DEFAULT_SKIN, host);
+    room.join('guest', 'Оля', DEFAULT_SKIN, guest);
+    expect(() => room.configure('guest', undefined, 0)).toThrow();
+    room.configure('host', undefined, 0);
+    const lobby = host.messages.filter((m) => m.t === 'room').pop();
+    expect(lobby && lobby.t === 'room' && lobby.bots).toBe(0);
+    expect(lobby && lobby.t === 'room' && lobby.freeSeats).toBe(2);
+    room.start('host');
+    expect(room.seats).toHaveLength(2);
+    expect(room.game!.playerNames).toEqual(['Тим', 'Оля']);
+    // Гость видит партию на двоих: он — игрок 0, создатель — игрок 1.
+    const state = guest.messages.filter((m) => m.t === 'state').pop();
+    expect(state && state.t === 'state' && state.game.playerNames).toEqual(['Оля', 'Тим']);
+    room.dispose();
+  });
+
+  it('одному без ботов начать нельзя, с одним ботом — можно', () => {
+    const room = new Room('ABCDE', 'host', { gameLength: 'short' });
+    room.join('host', 'Тим', DEFAULT_SKIN, fakeConnection());
+    room.configure('host', undefined, 0);
+    expect(() => room.start('host')).toThrow('err.needPlayers');
+    room.configure('host', undefined, 1);
+    room.start('host');
+    expect(room.seats).toHaveLength(2);
+    expect(room.seats[1]!.clientId).toBeNull();
+    room.dispose();
+  });
+
   it('в комнату не входит пятый игрок, а после начала — посторонний', () => {
     const room = new Room('ABCDE', 'a', {});
     for (const id of ['a', 'b', 'c', 'd']) room.join(id, id, DEFAULT_SKIN, fakeConnection());

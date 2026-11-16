@@ -54,6 +54,8 @@ export interface Stage {
   awayFromSeat(): boolean;
   /** Последнее нажатие было вращением камеры, а не кликом? */
   consumeDrag(): boolean;
+  /** Во сколько раз сейчас приближен вид за столом (1 — обычный). */
+  zoom(): number;
   /** Управление камерой (нужно для проверки сцены). */
   orbit: OrbitCamera;
   /** Применить изменённые настройки из `gfx`. */
@@ -113,30 +115,42 @@ export function createStage(container: HTMLElement): Stage {
   composer.addPass(vignette);
   composer.addPass(new OutputPass());
 
+  // Телефон греется от 60 кадров в секунду в полном разрешении: на сенсорных экранах
+  // рисуем не чаще 30 раз в секунду и с плотностью пикселей не выше 1.5.
+  const mobile = window.matchMedia('(pointer: coarse)').matches;
+
   // ---------- Камера ----------
 
   let view: StageView = 'table';
 
+  /** Угол обзора за столом без приближения. */
+  let tableFov = 60;
+  function zoomedFov(): number {
+    const half = Math.atan(Math.tan(THREE.MathUtils.degToRad(tableFov) / 2) / orbit.zoom);
+    return THREE.MathUtils.radToDeg(half * 2);
+  }
+
   /** Обзор «за столом»: на уровне глаз сидящего игрока, стол — перед ним. */
   function tableView(aspect: number): OrbitView {
     const narrow = THREE.MathUtils.clamp((1.3 - aspect) / 0.8, 0, 1); // 1 — вертикальный телефон
-    const pitch = THREE.MathUtils.lerp(-0.27, -0.4, narrow);
-    // Глаза игрока: он сидит вплотную к столу (край стола — на z = 5.85).
-    // На вертикальном телефоне садимся чуть дальше и выше, чтобы стол помещался в кадр.
+    // Глаза игрока — за краем стола (край — на z = 5.85), как в начале: виден весь стол и свои карты.
+    // На вертикальном телефоне садимся дальше и выше, чтобы в кадр попали и игроки по бокам.
+    const eye = new THREE.Vector3(0, THREE.MathUtils.lerp(4.6, 8.6, narrow), THREE.MathUtils.lerp(10.2, 12.6, narrow));
+    const look = new THREE.Vector3(0, THREE.MathUtils.lerp(0.9, 0.2, narrow), -0.4);
+    const pitch = Math.atan2(look.y - eye.y, eye.z - look.z);
     return {
-      target: new THREE.Vector3(0, 0, 0),
-      eye: new THREE.Vector3(0, THREE.MathUtils.lerp(4.0, 5.0, narrow), THREE.MathUtils.lerp(8.1, 9.3, narrow)),
+      target: look,
+      eye,
       azimuth: 0,
       elevation: pitch,
+      // Камера неподвижна: ни поворота, ни наклона — только приближение.
       distance: 0,
-      minDistance: 0,
-      maxDistance: 2.4,
-      // Наклонять голову вверх-вниз нельзя — только поворот влево-вправо.
+      minDistance: -0.3,
+      maxDistance: 1,
       minElevation: pitch,
       maxElevation: pitch,
-      // Повернуть голову можно до соседа слева или справа, но не дальше.
-      minAzimuth: -0.8,
-      maxAzimuth: 0.8,
+      minAzimuth: 0,
+      maxAzimuth: 0,
     };
   }
 
@@ -185,7 +199,7 @@ export function createStage(container: HTMLElement): Stage {
     const height = Math.max(1, container.clientHeight);
     // Считаем в настоящих пикселях экрана: у телефонов их в 2–3 раза больше, чем «точек» в браузере.
     // На «низком» качестве плотность экрана не учитываем — картинка мельче, зато быстрее.
-    const ratio = gfx.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+    const ratio = gfx.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2);
     const density = ratio / gfx.pixelScale;
     renderer.domElement.style.imageRendering = gfx.pixelScale > 1.5 ? 'pixelated' : 'auto';
     const renderWidth = Math.max(200, Math.round(width * density));
@@ -199,7 +213,9 @@ export function createStage(container: HTMLElement): Stage {
     camera.aspect = aspect;
     // Чем уже экран, тем шире угол обзора — чтобы боковые игроки оставались в кадре.
     const neededFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(46)) / aspect));
-    camera.fov = view === 'wardrobe' ? (aspect < 1 ? 60 : 44) : THREE.MathUtils.clamp(neededFov, 56, 80);
+    // На вертикальном телефоне угол шире, чтобы были видны игроки по бокам.
+    tableFov = THREE.MathUtils.clamp(neededFov, 56, aspect < 1 ? 100 : 80);
+    camera.fov = view === 'wardrobe' ? (aspect < 1 ? 60 : 44) : zoomedFov();
     if (aspectChanged) applyView(true);
     if (view === 'wardrobe' && aspect >= 1) {
       // На широком экране панель гардероба справа — сдвигаем картинку влево.
@@ -212,7 +228,8 @@ export function createStage(container: HTMLElement): Stage {
 
   function applySettings(): void {
     const high = gfx.quality === 'high';
-    bloom.enabled = gfx.bloom && high;
+    // Свечение — самый «горячий» эффект; на телефоне выключено.
+    bloom.enabled = gfx.bloom && high && !mobile;
     bloom.strength = gfx.bloomStrength;
     vignette.enabled = gfx.vignette > 0 && high;
     vignette.uniforms.uStrength.value = gfx.vignette;
@@ -239,10 +256,22 @@ export function createStage(container: HTMLElement): Stage {
   const callbacks: ((time: number, delta: number) => void)[] = [];
   const clock = new THREE.Clock();
 
-  function frame(): void {
+  let lastFrame = 0;
+
+  function frame(now: number): void {
+    if (mobile && now - lastFrame < 1000 / 31) return;
+    lastFrame = now;
     const delta = Math.min(clock.getDelta(), 0.1);
     const time = clock.elapsedTime;
     orbit.update(delta);
+    if (view === 'table') {
+      // Приближение за столом — сужением угла обзора.
+      const fov = zoomedFov();
+      if (Math.abs(camera.fov - fov) > 1e-3) {
+        camera.fov = fov;
+        camera.updateProjectionMatrix();
+      }
+    }
     if (view === 'wardrobe') {
       // Свет держится у камеры, чтобы персонаж был хорошо виден с любой стороны.
       wardrobeLight.position.copy(camera.position).add(new THREE.Vector3(0, 2.5, 0));
@@ -290,6 +319,7 @@ export function createStage(container: HTMLElement): Stage {
     viewChanged: () => orbit.offset > 0.12,
     awayFromSeat,
     consumeDrag: () => orbit.consumeDrag(),
+    zoom: () => (view === 'table' ? orbit.zoom : 1),
     orbit,
     onFrame(callback) {
       callbacks.push(callback);

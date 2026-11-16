@@ -8,7 +8,6 @@ import {
   type RoundSpec,
   type RuleSettings,
   type Suit,
-  PLAYER_COUNT,
   SUITS,
   SUIT_SYMBOL,
   bidBan,
@@ -25,6 +24,7 @@ import {
 import { type Language, type TextKey, LANGUAGES, cardsCount, getLanguage, localName, t, tKey } from '../i18n';
 import type { SeatInfo } from '../net/protocol';
 import { cardImage } from '../three/cardAtlas';
+import { seatOfPlayer } from '../three/tableState';
 import {
   type Skin,
   ACCESSORIES_FEMALE,
@@ -61,6 +61,7 @@ export interface OnlineState {
   started: boolean;
   botLevel: RuleSettings['botLevel'];
   bots: number;
+  freeSeats: number;
   /** Ключ перевода или готовый текст ошибки. */
   error: string | null;
 }
@@ -331,6 +332,13 @@ function lobbyHtml(ui: UiState): string {
   const level = online.host
     ? selectHtml('data-room-level', t('lobby.botLevel'), botLevelOptions(), online.botLevel)
     : `<p class="hint">${t('lobby.botLevel')}: ${t(`bot.${online.botLevel}` as TextKey)}</p>`;
+  // Сколько ботов посадить: от «столько, чтобы было хотя бы двое» до всех свободных мест.
+  const minBots = Math.max(0, 2 - humans);
+  const botOptions: [string, string][] = [];
+  for (let n = minBots; n <= online.freeSeats; n++) botOptions.push([String(n), String(n)]);
+  const botCount = online.host && online.freeSeats > 0
+    ? selectHtml('data-room-bots', t('lobby.botCount'), botOptions, String(online.bots))
+    : '';
   const start = online.host
     ? `<button class="btn primary" data-action="start-room">${t('lobby.start')}</button>`
     : `<p class="hint">${t('lobby.waitHost')}</p>`;
@@ -343,6 +351,7 @@ function lobbyHtml(ui: UiState): string {
     </div>
     <ol class="seat-list">${seats}</ol>
     <p class="hint">${t('lobby.players', { humans, bots: online.bots })}</p>
+    ${botCount}
     ${online.bots > 0 ? level : ''}
     ${error}
     ${start}
@@ -399,7 +408,8 @@ function plateHtml(game: GameState, player: number): string {
   // Таймер хода: время подставляет app.ts каждый кадр.
   const timer = active && game.settings.turnSeconds > 0 && !game.autoPlay[player] ? '<span class="timer" data-timer></span>' : '';
   const penalty = game.penalties[player] < 0 ? `<span class="plate-penalty">⏱ ${plain(game.penalties[player])}</span>` : '';
-  return `<div class="plate ${active ? 'active' : ''} ${player === HUMAN ? 'mine' : ''}" data-seat="${player}">
+  const seat = seatOfPlayer(game.playerNames.length, player);
+  return `<div class="plate ${active ? 'active' : ''} ${player === HUMAN ? 'mine' : ''}" data-seat="${seat}">
     <span class="plate-name">${playerName(game, player)}${dealer}${auto}</span>
     <span class="plate-bid" title="${t('hud.bidTaken')}">${bidLine(game, player)}</span>
     <span class="plate-score">${plain(totals(game)[player])}</span>
@@ -469,7 +479,7 @@ function actionsHtml(ui: UiState, game: GameState): string {
 
 function hudHtml(ui: UiState, game: GameState): string {
   let plates = '';
-  for (let player = 1; player < PLAYER_COUNT; player++) plates += plateHtml(game, player);
+  for (let player = 1; player < game.playerNames.length; player++) plates += plateHtml(game, player);
   const hasJoker = game.hands[HUMAN]?.some(isJoker) ?? false;
   const kicked = game.autoPlay[HUMAN] ? `<p class="kicked">${t('hud.kicked')}</p>` : '';
   return `<div class="hud">
@@ -505,7 +515,7 @@ export function sheetHtml(game: GameState): string {
     const trump = row ? (row.trump ? suitHtml(row.trump) : '—') : '';
     const cells = row
       ? row.cells.map((cell) => cellHtml(row.round, cell)).join('')
-      : '<td></td>'.repeat(PLAYER_COUNT);
+      : '<td></td>'.repeat(game.playerNames.length);
     rows += `<tr class="${current ? 'current' : ''}">
       <td class="num">${index + 1}</td>
       <td class="rname">${roundTitle(round)}</td>

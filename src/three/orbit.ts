@@ -1,9 +1,8 @@
 // Камера, которой управляет игрок. Два режима:
 //  - «вокруг точки» (гардероб): вращение вокруг персонажа, приближение и отдаление;
-//  - «на месте» (за столом): камера — это глаза игрока. Она не покидает кресло, только
-//    поворачивается (влево-вправо до соседей, немного вверх-вниз) и чуть подаётся вперёд.
-// Мышь: зажать и тянуть — поворот, правая кнопка или колесо — приблизить.
-// Телефон: палец — поворот, два пальца — приблизить.
+//  - «на месте» (за столом): камера — это глаза игрока. Она стоит неподвижно и смотрит на стол,
+//    её можно только приблизить (как бинокль), чтобы рассмотреть карты на столе.
+// За столом: колесо или зажатая правая кнопка — приблизить; на телефоне — два пальца.
 
 import * as THREE from 'three';
 
@@ -21,8 +20,8 @@ export interface OrbitView {
   maxElevation: number;
   /**
    * Режим «на месте»: камера стоит в этой точке и смотрит по направлению azimuth/elevation
-   * (azimuth 0 — к центру стола по оси -z, elevation < 0 — вниз). distance — насколько
-   * камера подалась вперёд (0 — сидит ровно), minDistance…maxDistance — пределы.
+   * (azimuth 0 — к центру стола по оси -z, elevation < 0 — вниз). distance — степень приближения:
+   * 0 — обычный вид, 1 — в ZOOM_MAX раз ближе, меньше нуля — чуть дальше.
    */
   eye?: THREE.Vector3;
   /** Пределы поворота влево-вправо (только для режима «на месте»). */
@@ -37,6 +36,9 @@ export interface Obstacle {
   radius: number;
   top: number;
 }
+
+/** Во сколько раз можно приблизить вид за столом. */
+export const ZOOM_MAX = 2.5;
 
 export class OrbitCamera {
   /** Предел удаления камеры от центра сцены по горизонтали (стены террасы). */
@@ -103,20 +105,8 @@ export class OrbitCamera {
         this.dragged = true;
         element.setPointerCapture(event.pointerId);
       }
-      if (this.goal.eye) {
-        // За столом: тянешь вправо — смотришь вправо, тянешь вверх — смотришь вверх.
-        this.goal.azimuth = THREE.MathUtils.clamp(
-          this.goal.azimuth + dx * 0.0032,
-          this.goal.minAzimuth ?? -Infinity,
-          this.goal.maxAzimuth ?? Infinity,
-        );
-        this.goal.elevation = THREE.MathUtils.clamp(
-          this.goal.elevation - dy * 0.0026,
-          this.goal.minElevation,
-          this.goal.maxElevation,
-        );
-        return;
-      }
+      // За столом камера не поворачивается: перетаскивание — это работа с картами.
+      if (this.goal.eye) return;
       this.goal.azimuth -= dx * 0.0055;
       this.goal.elevation = THREE.MathUtils.clamp(
         this.goal.elevation + dy * 0.0045,
@@ -151,7 +141,7 @@ export class OrbitCamera {
         if (this.goal.eye) {
           // За столом колесо подаёт камеру вперёд-назад в небольших пределах.
           this.goal.distance = THREE.MathUtils.clamp(
-            this.goal.distance - event.deltaY * 0.004,
+            this.goal.distance - event.deltaY * 0.0016,
             this.goal.minDistance,
             this.goal.maxDistance,
           );
@@ -170,9 +160,9 @@ export class OrbitCamera {
 
   private zoomBy(factor: number): void {
     if (this.goal.eye) {
-      // Сводим пальцы — отодвигаемся, разводим — приближаемся.
+      // Сводим пальцы — отдаляем, разводим — приближаем.
       this.goal.distance = THREE.MathUtils.clamp(
-        this.goal.distance + (1 - factor) * 6,
+        this.goal.distance - Math.log(factor) / Math.log(ZOOM_MAX),
         this.goal.minDistance,
         this.goal.maxDistance,
       );
@@ -235,6 +225,11 @@ export class OrbitCamera {
     );
   }
 
+  /** Во сколько раз сейчас приближен вид за столом (1 — обычный вид). */
+  get zoom(): number {
+    return this.goal.eye ? Math.pow(ZOOM_MAX, this.current.distance) : 1;
+  }
+
   /** Текущий угол поворота вокруг стола относительно исходного. */
   get azimuthFromHome(): number {
     return this.current.azimuth - shortest(this.current.azimuth, this.home.azimuth);
@@ -260,7 +255,8 @@ export class OrbitCamera {
       c.eye.lerp(g.eye, k);
       const cosE = Math.cos(c.elevation);
       const look = new THREE.Vector3(Math.sin(c.azimuth) * cosE, Math.sin(c.elevation), -Math.cos(c.azimuth) * cosE);
-      this.camera.position.copy(c.eye).addScaledVector(look, c.distance);
+      // Приближение делает сцена — сужая угол обзора; сама камера остаётся в кресле.
+      this.camera.position.copy(c.eye);
       this.camera.lookAt(this.camera.position.clone().add(look));
       this.camera.updateMatrixWorld();
       this.lift = 0;

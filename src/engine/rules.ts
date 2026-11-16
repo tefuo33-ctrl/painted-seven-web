@@ -153,6 +153,6 @@ export function jokerDemands(
   settings: RuleSettings = DEFAULT_SETTINGS,
 ): JokerDemand[] {
   if (plays.length > 0 || !settings.jokerRequests) return [];
-  // Без козыря вместо «козыря» можно потребовать старшую карту выбранной масти.
-  return trump !== null ? ['trump', 'strongest', 'weakest'] : ['suit', 'strongest', 'weakest'];
+  // Старшую карту выбранной масти можно потребовать всегда; «козырь» — только когда он есть.
+  return trump !== null ? ['trump', 'suit', 'strongest', 'weakest'] : ['suit', 'strongest', 'weakest'];
 }

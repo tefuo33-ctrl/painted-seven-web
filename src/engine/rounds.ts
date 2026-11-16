@@ -8,11 +8,16 @@ export interface RoundSpec {
   cards: number;
 }
 
+/** Сколько игроков за столом, если не сказано иное. Играть можно вдвоём, втроём и вчетвером. */
 export const PLAYER_COUNT = 4;
+export const MIN_PLAYERS = 2;
 export const MAX_CARDS = 9; // 36 карт / 4 игрока
 
-/** Полная партия: 1…8, затем «9» ×4, «Без козыря» ×4, «Тёмная» ×4, «Минуса» ×4, «Плюса» ×4 = 28. */
-export function buildRoundSequence(length: 'full' | 'short' = 'full'): RoundSpec[] {
+/**
+ * Полная партия: 1…8, затем «9», «Без козыря», «Тёмная», «Минуса», «Плюса» — каждый столько раз,
+ * сколько игроков (чтобы каждый по разу раздал). Вчетвером: 8 + 5 × 4 = 28 раундов.
+ */
+export function buildRoundSequence(length: 'full' | 'short' = 'full', players = PLAYER_COUNT): RoundSpec[] {
   if (length === 'short') {
     return [
       { mode: 'normal', cards: 2 },
@@ -30,7 +35,7 @@ export function buildRoundSequence(length: 'full' | 'short' = 'full'): RoundSpec
   }
   const blocks: RoundMode[] = ['normal', 'noTrump', 'dark', 'minus', 'plus'];
   for (const mode of blocks) {
-    for (let i = 0; i < PLAYER_COUNT; i++) {
+    for (let i = 0; i < players; i++) {
       rounds.push({ mode, cards: MAX_CARDS });
     }
   }
