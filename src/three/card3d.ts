@@ -67,6 +67,21 @@ function setFaceUv(uv: THREE.BufferAttribute, faceIndex: number, cell: number, p
   uv.setXY(base + 3, u1 - eu, v0 + ev);
 }
 
+/** Золотое свечение за картой: рамка вокруг карты, которой можно ходить. */
+let haloParts: { geometry: THREE.PlaneGeometry; lit: THREE.MeshBasicMaterial; chosen: THREE.MeshBasicMaterial } | null = null;
+function getHalo() {
+  if (!haloParts) {
+    const material = (color: number, opacity: number) =>
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, fog: false, toneMapped: false });
+    haloParts = {
+      geometry: new THREE.PlaneGeometry(CARD_W + 0.14, CARD_H + 0.14),
+      lit: material(0xf2c14e, 0.85),
+      chosen: material(0xffe28a, 1),
+    };
+  }
+  return haloParts;
+}
+
 function ease(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
@@ -87,6 +102,7 @@ export class Card3D {
   private delay = 0;
   private arc = 0;
   private onArrive: (() => void) | null = null;
+  private halo: THREE.Mesh;
 
   constructor() {
     const geometry = new THREE.BoxGeometry(CARD_W, CARD_H, CARD_T);
@@ -98,6 +114,13 @@ export class Card3D {
     this.mesh = new THREE.Mesh(geometry, getMaterials().normal);
     this.mesh.userData.card3d = this;
     this.mesh.castShadow = true;
+
+    // Рамка лежит сразу за лицом карты и чуть больше неё — снаружи видна золотая кайма.
+    const halo = getHalo();
+    this.halo = new THREE.Mesh(halo.geometry, halo.lit);
+    this.halo.position.z = CARD_T / 2 - 0.004;
+    this.halo.visible = false;
+    this.mesh.add(this.halo);
   }
 
   /** Показать на лице карту (или рубашку, если карта неизвестна). */
@@ -109,6 +132,8 @@ export class Card3D {
 
   setLook(look: Look): void {
     this.mesh.material = getMaterials()[look];
+    this.halo.visible = look === 'lit' || look === 'chosen';
+    this.halo.material = look === 'chosen' ? getHalo().chosen : getHalo().lit;
   }
 
   /** Мгновенно поставить карту в позу. */
