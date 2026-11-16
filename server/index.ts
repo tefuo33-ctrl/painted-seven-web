@@ -49,7 +49,7 @@ wss.on('connection', (socket: WebSocket) => {
       }
       case 'join': {
         const found = rooms.get(String(message.code).toUpperCase().trim());
-        if (!found) throw new Error('Комната с таким кодом не найдена');
+        if (!found) throw new Error('err.noRoom');
         clientId = String(message.clientId).slice(0, 64);
         found.join(clientId, cleanName(message.name), sanitizeSkin(message.skin), connection);
         room = found;

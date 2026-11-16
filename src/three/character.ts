@@ -26,9 +26,16 @@ const JACKET_BLACK = 0x1c1c22;
 
 type Polygon = [number, number][];
 
-/** Высота туловища: от бёдер до основания шеи. */
+/**
+ * Пропорции по листу персонажей (примерно три «головы» в росте):
+ * голова с причёской ~32 % роста, туловище ~37 %, ноги с обувью ~31 %. Шеи почти не видно.
+ */
 const HIP_Y = -1.2;
-const SHOULDER_Y = 2.25;
+const SHOULDER_Y = 1.72;
+/** Во сколько раз голова крупнее «реалистичной». */
+const HEAD_SCALE = 1.5;
+/** Длина ног у стоящего персонажа (от бёдер до пола). */
+export const STANDING_LEG = 2.45;
 const TORSO_TOP = SHOULDER_Y + 0.2;
 /** Размер «клетки выкройки» (48×64) в единицах сцены. */
 const UNIT_Y = (TORSO_TOP - HIP_Y) / 64;
@@ -274,24 +281,24 @@ export class Character {
     // Туловище. У мужчины широкие подложенные плечи, у женщины пиджак заужен в талии.
     const sections: Section[] = female
       ? [
-          { y: HIP_Y, w: 1.78, d: 1.12 },
-          { y: -0.6, w: 1.7, d: 1.06 },
-          { y: 0.25, w: 1.3, d: 0.88 },
-          { y: 1.0, w: 1.66, d: 1.04 },
-          { y: 1.7, w: 2.0, d: 1.02 },
-          { y: 2.1, w: 2.16, d: 0.92 },
-          { y: SHOULDER_Y + 0.1, w: 1.5, d: 0.62 },
-          { y: TORSO_TOP, w: 0.5, d: 0.4 },
+          { y: HIP_Y, w: 1.9, d: 1.2 },
+          { y: -0.7, w: 1.84, d: 1.14 },
+          { y: 0.1, w: 1.5, d: 0.98 },
+          { y: 0.8, w: 1.8, d: 1.08 },
+          { y: 1.35, w: 2.14, d: 1.06 },
+          { y: 1.62, w: 2.26, d: 0.98 },
+          { y: SHOULDER_Y + 0.08, w: 1.6, d: 0.74 },
+          { y: TORSO_TOP, w: 0.6, d: 0.5 },
         ]
       : [
-          { y: HIP_Y, w: 2.0, d: 1.22 },
-          { y: -0.4, w: 2.0, d: 1.2 },
-          { y: 0.4, w: 2.06, d: 1.16 },
-          { y: 1.2, w: 2.52, d: 1.22 },
-          { y: 1.8, w: 2.9, d: 1.16 },
-          { y: 2.1, w: 3.0, d: 1.04 },
-          { y: SHOULDER_Y + 0.1, w: 2.0, d: 0.7 },
-          { y: TORSO_TOP, w: 0.56, d: 0.44 },
+          { y: HIP_Y, w: 2.2, d: 1.32 },
+          { y: -0.5, w: 2.2, d: 1.3 },
+          { y: 0.3, w: 2.3, d: 1.26 },
+          { y: 0.95, w: 2.66, d: 1.3 },
+          { y: 1.4, w: 2.98, d: 1.24 },
+          { y: 1.62, w: 3.06, d: 1.12 },
+          { y: SHOULDER_Y + 0.08, w: 2.1, d: 0.84 },
+          { y: TORSO_TOP, w: 0.7, d: 0.56 },
         ];
     this.body.add(
       new THREE.Mesh(loftTorso(sections), new THREE.MeshPhongMaterial({ map: torsoTexture(skin), shininess: 5, specular: 0x111111 })),
@@ -299,8 +306,9 @@ export class Character {
     this.buildClothes(female, sections);
 
     // Шея и голова.
-    this.body.add(limb(new THREE.Vector3(0, SHOULDER_Y + 0.05, 0), new THREE.Vector3(0, SHOULDER_Y + 0.5, -0.03), female ? 0.2 : 0.25, smooth(SKIN_DARK, 6)));
-    this.head.position.set(0, SHOULDER_Y + 0.38, 0);
+    this.body.add(limb(new THREE.Vector3(0, SHOULDER_Y, 0), new THREE.Vector3(0, SHOULDER_Y + 0.34, -0.02), female ? 0.26 : 0.32, smooth(SKIN_DARK, 6)));
+    this.head.position.set(0, SHOULDER_Y + 0.02, 0);
+    this.head.scale.setScalar(HEAD_SCALE);
     this.body.add(this.head);
     const skull = buildHead(female);
     skull.position.y = 0.92;
@@ -310,17 +318,17 @@ export class Character {
     this.buildAccessories(female);
 
     // Руки: плечо → локоть → кисть. Сидя — кисти сведены перед собой и держат карты.
-    const shoulderX = (female ? 2.16 : 3.0) / 2 - 0.3;
-    const armRadius = female ? 0.25 : 0.33;
+    const shoulderX = (female ? 2.26 : 3.06) / 2 - 0.3;
+    const armRadius = female ? 0.29 : 0.36;
     for (const side of [1, -1]) {
       const holder = side === 1 ? this.rightArm : new THREE.Group();
-      const shoulder = new THREE.Vector3(side * shoulderX, SHOULDER_Y - 0.32, 0);
+      const shoulder = new THREE.Vector3(side * shoulderX, SHOULDER_Y - 0.36, 0);
       const elbow = seated
-        ? new THREE.Vector3(side * (shoulderX + 0.3), 0.66, -0.62)
-        : new THREE.Vector3(side * (shoulderX + 0.16), 0.5, 0.06);
+        ? new THREE.Vector3(side * (shoulderX + 0.3), 0.56, -0.62)
+        : new THREE.Vector3(side * (shoulderX + 0.2), 0.36, 0.04);
       const wrist = seated
         ? new THREE.Vector3(side * 0.36, 0.62, -1.78)
-        : new THREE.Vector3(side * (shoulderX + 0.14), -0.95, -0.18);
+        : new THREE.Vector3(side * (shoulderX + 0.2), -0.72, -0.12);
       holder.position.copy(shoulder);
       const local = (p: THREE.Vector3) => p.clone().sub(shoulder);
       // Подплечник: плечо пиджака чуть шире и выше руки.
@@ -471,22 +479,24 @@ export class Character {
     const shoeColor = (female ? SHOES_FEMALE[skin.shoes] : SHOES_MALE[skin.shoes]).color ?? BLACK;
     const shoeMaterial = smooth(shoeColor, 70);
     const heel = female ? SHOES_FEMALE[skin.shoes].heel : 0;
-    const radius = female ? 0.3 : 0.42;
-    const footY = FLOOR_Y + 0.22 + heel * 0.5;
+    const radius = female ? 0.32 : 0.5;
+    // Стоящий персонаж ниже: его «пол» — на длину коротких ног под бёдрами.
+    const ground = seated ? FLOOR_Y : HIP_Y - STANDING_LEG;
+    const footY = ground + 0.22 + heel * 0.5;
 
     for (const side of [1, -1]) {
-      const legX = side * (female ? 0.4 : 0.5);
+      const legX = side * (female ? 0.42 : 0.56);
       const hip = new THREE.Vector3(legX, HIP_Y + 0.1, 0);
       const knee = seated ? new THREE.Vector3(legX, HIP_Y + 0.05, -1.75) : new THREE.Vector3(legX * 0.95, (HIP_Y + footY) / 2, -0.04);
       const ankle = seated ? new THREE.Vector3(legX, footY + 0.2, -1.6) : new THREE.Vector3(legX * 0.9, footY + 0.2, 0);
       this.body.add(limb(hip, knee, radius, legMaterial));
-      this.body.add(limb(knee, ankle, radius * 0.8, legMaterial));
+      this.body.add(limb(knee, ankle, radius * (female ? 0.8 : 0.94), legMaterial));
       // Ботинок: вытянутая округлая форма с подошвой.
-      this.body.add(blob(0.3, [female ? 0.78 : 1, 0.6, 1.75], [ankle.x, footY - 0.04, ankle.z - 0.3], shoeMaterial));
-      if (!female) this.body.add(blob(0.3, [1.04, 0.16, 1.8], [ankle.x, FLOOR_Y + 0.05, ankle.z - 0.3], smooth(BLACK, 10)));
+      this.body.add(blob(0.34, [female ? 0.8 : 1.15, 0.62, 1.7], [ankle.x, footY - 0.04, ankle.z - 0.28], shoeMaterial));
+      if (!female) this.body.add(blob(0.3, [1.04, 0.16, 1.8], [ankle.x, ground + 0.05, ankle.z - 0.3], smooth(BLACK, 10)));
       if (heel > 0) {
         const heelMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.05, heel + 0.2, 10), shoeMaterial);
-        heelMesh.position.set(ankle.x, FLOOR_Y + (heel + 0.2) / 2, ankle.z + 0.12);
+        heelMesh.position.set(ankle.x, ground + (heel + 0.2) / 2, ankle.z + 0.12);
         this.body.add(heelMesh);
       }
     }
@@ -517,148 +527,149 @@ export class Character {
   }
 
   private buildFace(female: boolean): void {
-    const black = smooth(BLACK, 100);
-    // Чёрные очки в оправе: у мужчины прямоугольные со скруглением, у женщины чуть крупнее.
-    const lensW = female ? 0.5 : 0.46;
-    const lensH = female ? 0.31 : 0.25;
+    const black = smooth(BLACK, 110);
+    // Крупные чёрные очки закрывают глаза — как на листе персонажей.
+    const lensW = female ? 0.52 : 0.5;
+    const lensH = female ? 0.34 : 0.3;
     const rounded = (w: number, h: number, r: number) => {
       const shape = new THREE.Shape();
       shape.moveTo(-w / 2 + r, -h / 2);
       shape.lineTo(w / 2 - r, -h / 2);
       shape.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
-      shape.lineTo(w / 2, h / 2 - r * 0.6);
-      shape.quadraticCurveTo(w / 2, h / 2, w / 2 - r * 0.6, h / 2);
-      shape.lineTo(-w / 2 + r * 0.6, h / 2);
-      shape.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r * 0.6);
+      shape.lineTo(w / 2, h / 2 - r * 0.5);
+      shape.quadraticCurveTo(w / 2, h / 2, w / 2 - r * 0.5, h / 2);
+      shape.lineTo(-w / 2 + r * 0.5, h / 2);
+      shape.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r * 0.5);
       shape.lineTo(-w / 2, -h / 2 + r);
       shape.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
       return shape;
     };
-    const lensGeometry = new THREE.ExtrudeGeometry(rounded(lensW, lensH, 0.09), { depth: 0.045, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 2, curveSegments: 8 });
+    const lensGeometry = new THREE.ExtrudeGeometry(rounded(lensW, lensH, 0.12), { depth: 0.05, bevelEnabled: true, bevelSize: 0.014, bevelThickness: 0.014, bevelSegments: 2, curveSegments: 10 });
     for (const side of [1, -1]) {
       const lens = new THREE.Mesh(lensGeometry, black);
-      lens.position.set(side * 0.285, 1.04, -0.69);
+      lens.position.set(side * 0.29, 0.98, -0.7);
       lens.rotation.y = side * -0.2;
       this.head.add(lens);
-      const temple = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.045, 0.74), black);
-      temple.position.set(side * 0.585, 1.1, -0.32);
+      const temple = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.74), black);
+      temple.position.set(side * 0.6, 1.05, -0.32);
       temple.rotation.y = side * 0.06;
       this.head.add(temple);
     }
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.04, 0.04), black);
-    bridge.position.set(0, 1.11, -0.68);
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.05), black);
+    bridge.position.set(0, 1.06, -0.69);
     this.head.add(bridge);
 
-    // Нос: тонкая спинка и кончик.
-    this.head.add(limb(new THREE.Vector3(0, 1.08, -0.62), new THREE.Vector3(0, 0.84, -0.7), 0.05, smooth(SKIN_LIGHT, 8)));
-    this.head.add(blob(0.075, [1.05, 0.8, 1], [0, 0.82, -0.69], smooth(SKIN_LIGHT, 8)));
-    // Губы: верхняя и нижняя.
-    const lipColor = female ? 0xb02a40 : 0xa8685a;
-    this.head.add(blob(0.07, [female ? 1.5 : 1.7, 0.34, 0.5], [0, 0.585, -0.545], smooth(lipColor, 14)));
-    this.head.add(blob(0.07, [female ? 1.25 : 1.4, 0.4, 0.5], [0, 0.535, -0.535], smooth(female ? 0xc03a50 : 0xb47466, 18)));
-    // Уши и брови над очками.
-    const browColor = HAIR_COLORS[this.skin.hairColor].color ?? 0x35251c;
+    // Небольшой нос и маленький рот.
+    this.head.add(blob(0.07, [0.9, 0.8, 0.9], [0, 0.78, -0.68], smooth(SKIN_LIGHT, 8)));
+    this.head.add(blob(0.06, [female ? 1.5 : 1.7, 0.4, 0.5], [0, 0.56, -0.56], smooth(female ? 0xb83448 : 0xa66a5c, 16)));
+    // Уши (у длинных причёсок их закрывают волосы).
     for (const side of [1, -1]) {
-      this.head.add(blob(0.13, [0.42, 1, 0.72], [side * 0.6, 0.98, 0.04], smooth(SKIN_DARK, 8)));
-      const brow = limb(new THREE.Vector3(side * 0.12, 1.25, -0.63), new THREE.Vector3(side * 0.44, 1.27 + (female ? 0.02 : 0), -0.56), female ? 0.018 : 0.026, smooth(browColor, 6));
-      this.head.add(brow);
+      this.head.add(blob(0.13, [0.42, 1, 0.72], [side * 0.6, 0.94, 0.04], smooth(SKIN_DARK, 8)));
     }
   }
 
   private buildHair(female: boolean): void {
     const tone = HAIR_COLORS[this.skin.hairColor];
-    const dark = smooth(tone.color ?? 0x35251c, 28);
-    const light = smooth(tone.light, 28);
+    const dark = smooth(tone.color ?? 0x35251c, 30);
+    const light = smooth(tone.light, 30);
     const style = this.skin.hair;
     // Под шляпой волосы прижаты, чтобы не торчали сквозь неё.
     const hat = this.skin.accessory === 3;
     const random = seededRandom(style * 31 + this.skin.hairColor * 7 + (female ? 100 : 0));
     const add = (mesh: THREE.Mesh) => this.head.add(mesh);
+    const pick = (i: number) => (i % 3 === 0 ? light : dark);
 
-    /** Основа причёски по форме головы. */
-    const cap = (lift: number, back: number, wide = 1.04) => {
-      add(blob(0.66, [wide, 1.02 + lift, 1.1], [0, 1.3 + lift * 0.3, 0.1 + back], dark));
+    /** Основа причёски: шапка заметно больше головы, сдвинута к затылку. */
+    const cap = (size: number, lift: number, back: number) => {
+      add(blob(0.7, [1.06 * size, (1.02 + lift) * size, 1.12 * size], [0, 1.32 + lift * 0.4, 0.14 + back], dark));
     };
-    /** Локоны: шары, разбросанные по области. Чередуются тёмные и светлые пряди. */
+    /** Локоны: шары, разбросанные по области; чередуются тёмные и светлые пряди. */
     const curls = (count: number, area: () => [number, number, number], size: number) => {
       for (let i = 0; i < count; i++) {
         const [x, y, z] = area();
-        const r = size * (0.75 + random() * 0.55);
-        add(blob(r, [1, 0.9 + random() * 0.3, 1], [x, y, z], i % 3 === 0 ? light : dark));
+        add(blob(size * (0.78 + random() * 0.5), [1, 0.9 + random() * 0.25, 1], [x, y, z], pick(i)));
       }
     };
-    /** Точка на «шапке» головы: a — угол вокруг, up — высота 0…1. */
-    const onCap = (a: number, up: number, radius = 0.66): [number, number, number] => {
+    /** Точка на поверхности шапки: a — угол вокруг головы, up — высота 0…1. */
+    const onCap = (a: number, up: number, radius: number): [number, number, number] => {
       const ring = Math.sqrt(Math.max(0, 1 - up * up)) * radius;
-      return [Math.cos(a) * ring * 1.02, 1.3 + up * radius * 1.02, Math.sin(a) * ring * 1.08 + 0.1];
+      return [Math.cos(a) * ring * 1.04, 1.32 + up * radius, Math.sin(a) * ring * 1.1 + 0.14];
+    };
+    /** Чёлка: пряди надо лбом, спускаются почти до очков. */
+    const fringe = (count: number, low: number, sweep: number) => {
+      for (let i = 0; i < count; i++) {
+        const t = count === 1 ? 0.5 : i / (count - 1);
+        const x = (t - 0.5) * 1.08;
+        add(blob(0.2, [1.05, 1.25, 0.8], [x + sweep * (1 - Math.abs(t - 0.5)), low + 0.24 - Math.abs(t - 0.5) * 0.18, -0.6 + Math.abs(t - 0.5) * 0.14], pick(i + 1)));
+      }
+    };
+    /** Виски: объём по бокам головы перед ушами. */
+    const sides = (length: number) => {
+      for (const side of [1, -1]) add(blob(0.24, [0.6, length, 1.5], [side * 0.6, 1.3 - length * 0.12, 0.02], dark));
     };
 
     if (!female) {
-      if (style === 3) return; // лысый
+      if (style === 3) return; // без волос
       if (style === 1 || hat) {
-        // Коротко: плотная шапка и аккуратная линия висков.
-        cap(-0.05, 0.02);
-        for (const side of [1, -1]) add(blob(0.2, [0.5, 1.2, 1.3], [side * 0.6, 1.2, 0.05], dark));
+        // Короткие: аккуратная шапка и короткая чёлка.
+        cap(0.98, -0.02, 0);
+        fringe(5, 1.36, 0);
+        sides(1.3);
         return;
       }
       if (style === 2) {
-        // Кудрявые, пышные — как на референсе: плотные завитки по всей голове и чёлка на лоб.
-        cap(0.04, 0.02);
-        curls(70, () => onCap(random() * Math.PI * 2, 0.1 + random() * 0.9, 0.7), 0.19);
-        curls(14, () => [(random() - 0.5) * 0.9, 1.5 + random() * 0.2, -0.56 - random() * 0.1], 0.15);
+        // Кудрявые: пышная шапка из завитков, чёлка на лоб.
+        cap(1.08, 0.06, 0);
+        curls(90, () => onCap(random() * Math.PI * 2, 0.05 + random() * 0.95, 0.8), 0.2);
+        curls(16, () => [(random() - 0.5) * 1.0, 1.46 + random() * 0.2, -0.56 - random() * 0.12], 0.17);
+        sides(1.5);
         return;
       }
-      // Зачёсаны назад с объёмом: пряди идут ото лба к затылку.
-      cap(0.02, 0.05);
-      for (let i = -3; i <= 3; i++) {
-        const x = i * 0.15;
-        const height = 1.92 - Math.abs(i) * 0.045;
-        const strand = limb(new THREE.Vector3(x * 0.9, height - 0.3, -0.52), new THREE.Vector3(x, height - 0.12, 0.55), 0.115, i % 2 ? light : dark);
-        add(strand);
-        add(blob(0.13, [1, 1.1, 1.2], [x * 0.9, height - 0.18, -0.46], i % 2 ? light : dark)); // объём надо лбом
-      }
-      for (const side of [1, -1]) add(blob(0.22, [0.5, 1.5, 1.6], [side * 0.6, 1.24, 0.12], dark));
+      // Пышные, уложенные с объёмом сверху — как на листе персонажей.
+      cap(1.1, 0.1, 0.02);
+      curls(34, () => onCap(random() * Math.PI * 2, 0.35 + random() * 0.65, 0.78), 0.26);
+      fringe(6, 1.36, 0.1);
+      sides(1.5);
       return;
     }
 
-    // Женские причёски: объём надо лбом с пробором.
-    cap(hat ? -0.04 : 0.05, 0.03, 1.06);
+    // Женские причёски: объём надо лбом и по бокам.
+    cap(hat ? 1.0 : 1.1, hat ? -0.02 : 0.08, 0.03);
     if (!hat) {
-      for (const side of [1, -1]) {
-        add(blob(0.3, [1.1, 0.8, 1.5], [side * 0.3, 1.82, -0.2], side === 1 ? light : dark));
-        add(blob(0.24, [0.8, 1.2, 1.2], [side * 0.56, 1.5, -0.3], dark));
-      }
+      curls(22, () => onCap(random() * Math.PI * 2, 0.4 + random() * 0.6, 0.78), 0.26);
+      fringe(5, 1.4, -0.12);
     }
     if (style === 1) {
-      // Пучок на затылке.
-      add(blob(0.36, [1, 1, 1], [0, 1.46, 0.86], dark));
-      add(blob(0.3, [1.1, 0.5, 1.1], [0, 1.52, 0.9], light));
-      add(blob(0.1, [2.2, 0.6, 1], [0, 1.38, 0.58], light));
+      // Собраны наверх, пучок на затылке.
+      add(blob(0.4, [1, 1, 1], [0, 1.5, 0.94], dark));
+      add(blob(0.32, [1.1, 0.5, 1.1], [0, 1.6, 0.98], light));
+      sides(1.4);
     } else if (style === 2) {
-      // Каре: ровная линия у подбородка, пряди обрамляют лицо.
-      add(blob(0.74, [1.06, 1.0, 0.9], [0, 0.86, 0.26], dark));
+      // Каре: до подбородка, обрамляет лицо.
+      add(blob(0.8, [1.08, 1.0, 0.92], [0, 0.84, 0.28], dark));
       for (const side of [1, -1]) {
-        add(blob(0.3, [0.66, 2.1, 1.3], [side * 0.62, 0.76, -0.04], side === 1 ? light : dark));
-        add(blob(0.16, [0.8, 1, 1], [side * 0.6, 0.2, -0.1], dark));
+        add(blob(0.32, [0.7, 2.2, 1.35], [side * 0.66, 0.74, -0.02], side === 1 ? light : dark));
+        add(blob(0.18, [0.8, 1, 1], [side * 0.64, 0.14, -0.08], dark));
       }
     } else if (style === 3) {
       // Хвост: собран сзади и спускается на спину.
-      add(blob(0.24, [1, 1, 1], [0, 1.52, 0.8], dark));
-      add(blob(0.09, [2.4, 0.9, 1.4], [0, 1.5, 0.74], smooth(0x8a1c2b, 20))); // резинка
+      add(blob(0.26, [1, 1, 1], [0, 1.56, 0.86], dark));
+      add(blob(0.09, [2.4, 0.9, 1.4], [0, 1.54, 0.8], smooth(0x8a1c2b, 20))); // резинка
       for (let i = 0; i < 9; i++) {
         const t = i / 8;
-        add(blob(0.2 - t * 0.07, [1, 1.3, 1], [Math.sin(t * 4) * 0.06, 1.38 - t * 2.2, 0.96 + Math.sin(t * 3) * 0.08], i % 2 ? light : dark));
+        add(blob(0.24 - t * 0.08, [1, 1.3, 1], [Math.sin(t * 4) * 0.06, 1.42 - t * 2.0, 1.02 + Math.sin(t * 3) * 0.08], pick(i)));
       }
+      sides(1.4);
     } else {
-      // Длинные волнистые волосы ниже плеч: тяжёлые локоны по спине и на плечах, как на референсе.
-      add(blob(0.72, [1.14, 2.2, 0.66], [0, 0.05, 0.5], dark));
-      curls(58, () => {
+      // Длинные волнистые: тяжёлые локоны обрамляют лицо и лежат на плечах и спине.
+      add(blob(0.78, [1.2, 1.9, 0.72], [0, 0.2, 0.52], dark));
+      curls(70, () => {
         const side = random() < 0.5 ? -1 : 1;
         const down = random();
         const forward = random();
-        return [side * (0.5 + random() * 0.32 + down * 0.12), 1.2 - down * 2.5, 0.42 - forward * 0.62 * Math.min(1, down * 1.6)];
-      }, 0.23);
-      curls(22, () => [(random() - 0.5) * 1.4, -0.6 - random() * 1.0, 0.5 + random() * 0.3], 0.25);
+        return [side * (0.56 + random() * 0.3 + down * 0.1), 1.3 - down * 2.3, 0.44 - forward * 0.7 * Math.min(1, 0.3 + down * 1.4)];
+      }, 0.25);
+      curls(24, () => [(random() - 0.5) * 1.5, -0.4 - random() * 0.8, 0.5 + random() * 0.3], 0.27);
     }
   }
 

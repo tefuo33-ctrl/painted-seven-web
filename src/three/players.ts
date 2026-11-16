@@ -1,9 +1,9 @@
 // Персонажи за столом и персонаж в «Гардеробе».
 
 import * as THREE from 'three';
-import { Character, type Skin } from './character';
+import { Character, STANDING_LEG, type Skin } from './character';
 import { type Stage, WARDROBE_SPOT } from './stage';
-import { SEATS } from './table';
+import { FLOOR_Y, SEATS } from './table';
 
 /** Где персонаж сидит относительно центра кресла (ближе к спинке). */
 const SIT_OFFSET = 0.3;
@@ -28,7 +28,9 @@ export class Players {
 
   /** Рассадить игроков. `skins[seat]` — внешний вид; место 0 — я сам. */
   seat(skins: (Skin | null)[]): void {
-    for (const character of this.characters.values()) this.stage.scene.remove(character.group);
+    for (const character of this.characters.values()) {
+      this.stage.scene.remove(character.group);
+    }
     this.characters.clear();
     skins.forEach((skin, seat) => {
       if (!skin) return;
@@ -79,7 +81,9 @@ export class Players {
   /** Показать стоящего персонажа для «Гардероба» (null — убрать). Вращает его игрок — камерой. */
   showWardrobe(skin: Skin | null): void {
     if (!skin) {
-      if (this.wardrobe) this.stage.scene.remove(this.wardrobe.group);
+      if (this.wardrobe) {
+        this.stage.scene.remove(this.wardrobe.group);
+      }
       this.wardrobe = null;
       this.stage.setView('table');
       return;
@@ -87,6 +91,7 @@ export class Players {
     if (!this.wardrobe) {
       this.wardrobe = new Character(skin, false);
       this.wardrobe.group.position.copy(WARDROBE_SPOT);
+      this.wardrobe.group.position.y = FLOOR_Y + 1.2 + STANDING_LEG; // бёдра модели — на y = -1.2
       this.wardrobe.group.rotation.y = Math.PI; // лицом к камере
       this.stage.scene.add(this.wardrobe.group);
       this.stage.setView('wardrobe');

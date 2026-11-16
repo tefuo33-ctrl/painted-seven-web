@@ -74,9 +74,9 @@ export class Room {
     this.lastActivity = Date.now();
     let index = this.seatOf(clientId);
     if (index < 0) {
-      if (this.started) throw new Error('Игра в этой комнате уже началась');
+      if (this.started) throw new Error('err.started');
       index = this.seats.findIndex((seat) => seat === null);
-      if (index < 0) throw new Error('В комнате уже четыре игрока');
+      if (index < 0) throw new Error('err.full');
       this.seats[index] = { clientId, name, skin, connection, ready: false };
     } else {
       const seat = this.seats[index]!;
@@ -108,7 +108,7 @@ export class Room {
 
   /** Начать партию: пустые места занимают боты со случайными именами и внешностью. */
   start(clientId: string): void {
-    if (clientId !== this.hostId) throw new Error('Начать игру может только создатель комнаты');
+    if (clientId !== this.hostId) throw new Error('err.notHost');
     if (this.started) return;
     const empty = this.seats.flatMap((seat, i) => (seat === null ? [i] : []));
     const genders = empty.map(() => randomGender());
@@ -150,7 +150,7 @@ export class Room {
 
   /** Создатель комнаты выбирает сложность ботов (только до начала игры). */
   configure(clientId: string, botLevel: BotLevel): void {
-    if (clientId !== this.hostId) throw new Error('Настройки меняет только создатель комнаты');
+    if (clientId !== this.hostId) throw new Error('err.notHost');
     if (this.started) return;
     if (!['easy', 'normal', 'hard', 'expert'].includes(botLevel)) return;
     this.botLevel = botLevel;
@@ -164,8 +164,8 @@ export class Room {
 
   private requireTurn(clientId: string): GameState {
     const index = this.seatOf(clientId);
-    if (!this.game || index < 0) throw new Error('Вы не в этой игре');
-    if (this.game.turn !== index) throw new Error('Сейчас не ваш ход');
+    if (!this.game || index < 0) throw new Error('err.notInGame');
+    if (this.game.turn !== index) throw new Error('err.notYourTurn');
     return this.game;
   }
 

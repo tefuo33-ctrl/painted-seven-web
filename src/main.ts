@@ -1,6 +1,7 @@
 // Точка входа веб-версии: 3D-сцена на заднем плане и интерфейс поверх неё.
 
 import './ui/style.css';
+import { getLanguage, loadLanguage } from './i18n';
 import { loadGfx } from './three/gfx';
 import { createStage } from './three/stage';
 import { startApp } from './ui/app';
@@ -14,6 +15,8 @@ if (new URLSearchParams(location.search).has('scene')) {
 }
 
 loadGfx();
+loadLanguage();
+document.documentElement.lang = getLanguage();
 
 if (stageRoot && root) {
   const stage = createStage(stageRoot);

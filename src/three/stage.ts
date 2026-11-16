@@ -54,6 +54,8 @@ export interface Stage {
   awayFromSeat(): boolean;
   /** Последнее нажатие было вращением камеры, а не кликом? */
   consumeDrag(): boolean;
+  /** Управление камерой (нужно для проверки сцены). */
+  orbit: OrbitCamera;
   /** Применить изменённые настройки из `gfx`. */
   applySettings(): void;
   /** Добавить функцию, которая вызывается каждый кадр (time и delta — в секундах). */
@@ -132,10 +134,10 @@ export function createStage(container: HTMLElement): Stage {
 
   function wardrobeView(aspect: number): OrbitView {
     return {
-      target: new THREE.Vector3(WARDROBE_SPOT.x, -0.4, WARDROBE_SPOT.z),
+      target: new THREE.Vector3(WARDROBE_SPOT.x, 0.4, WARDROBE_SPOT.z),
       azimuth: 0,
       elevation: 0.06,
-      distance: aspect < 1 ? 15.5 : 12.5,
+      distance: aspect < 1 ? 17 : 13.5,
       minDistance: 4,
       maxDistance: 18,
       minElevation: -0.15,
@@ -278,6 +280,7 @@ export function createStage(container: HTMLElement): Stage {
     viewChanged: () => orbit.offset > 0.12,
     awayFromSeat,
     consumeDrag: () => orbit.consumeDrag(),
+    orbit,
     onFrame(callback) {
       callbacks.push(callback);
     },

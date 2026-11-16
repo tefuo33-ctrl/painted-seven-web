@@ -1,6 +1,7 @@
 // Профиль игрока: имя и внешний вид персонажа. Хранится в браузере.
 
-import { type Skin, DEFAULT_SKIN } from '../three/character';
+import { t } from '../i18n';
+import { type Skin, DEFAULT_SKIN, sanitizeSkin } from '../shared/skin';
 
 export interface Profile {
   name: string;
@@ -14,7 +15,7 @@ export function loadProfile(): Profile {
     const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null') as Partial<Profile> | null;
     return {
       name: typeof saved?.name === 'string' ? saved.name : '',
-      skin: { ...DEFAULT_SKIN, ...(saved?.skin ?? {}) },
+      skin: sanitizeSkin({ ...DEFAULT_SKIN, ...(saved?.skin ?? {}) }),
     };
   } catch {
     return { name: '', skin: { ...DEFAULT_SKIN } };
@@ -31,5 +32,5 @@ export function saveProfile(profile: Profile): void {
 
 /** Имя для показа: если человек ничего не ввёл — «Вы». */
 export function displayName(profile: Profile): string {
-  return profile.name.trim() || 'Вы';
+  return profile.name.trim() || t('common.you');
 }

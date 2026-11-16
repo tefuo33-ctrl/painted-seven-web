@@ -80,3 +80,26 @@ export function cardsCount(n: number): string {
   if (current === 'ru' && n >= 2 && n <= 4) return t('round.cards.few', { n });
   return t('round.cards.many', { n });
 }
+
+const LATIN: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'yo', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k',
+  л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts',
+  ч: 'ch', ш: 'sh', щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya', і: 'i', ї: 'yi', є: 'ye',
+};
+
+/**
+ * Имя игрока для текущего языка: на немецком и английском кириллица пишется латиницей,
+ * чтобы друзья из других стран могли прочитать имена ботов и соперников.
+ */
+export function localName(name: string): string {
+  if (current === 'ru' || !/[а-яёіїє]/i.test(name)) return name;
+  const text = name.replace(/дж/gi, (m) => (m[0] === 'Д' ? 'J' : 'j'));
+  let out = '';
+  for (const char of text) {
+    const lower = char.toLowerCase();
+    const latin = LATIN[lower];
+    if (latin === undefined) out += char;
+    else out += char === lower ? latin : latin.charAt(0).toUpperCase() + latin.slice(1);
+  }
+  return out;
+}

@@ -263,58 +263,79 @@ body.scene-only #app {
   left: 0;
   right: 0;
   bottom: 0;
+  max-height: 58%;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 8px;
   padding: 26px 12px max(12px, env(safe-area-inset-bottom));
-  background: linear-gradient(transparent, rgba(16, 12, 30, 0.85) 22%);
+  background: linear-gradient(transparent, rgba(16, 12, 30, 0.9) 12%);
+  overflow-y: auto;
   pointer-events: auto;
+}
+
+.wardrobe-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .wardrobe h2 {
   margin: 0;
   color: var(--gold);
-  font-size: 20px;
+  font-size: 22px;
   text-shadow: 2px 2px 0 #000;
 }
 
-.wardrobe .row {
+.wardrobe .row,
+.tabs {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 6px;
 }
 
-.row-title {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--ink-dim);
-}
-
-.btn.seg {
+.btn.seg,
+.btn.tab {
   min-height: 40px;
   padding: 6px 12px;
   font-size: 14px;
 }
 
-.btn.seg.active {
+.btn.seg {
+  flex: 1;
+}
+
+.btn.seg.active,
+.btn.tab.active,
+.btn.option.active,
+.btn.lang.active {
   border-color: var(--gold);
   color: var(--gold);
+  background: rgba(60, 44, 10, 0.9);
+}
+
+.options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.btn.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 6px 10px;
+  font-size: 14px;
+  text-align: left;
 }
 
 .swatch {
-  width: 40px;
-  height: 40px;
-  border: 2px solid rgba(235, 230, 214, 0.4);
-  border-radius: 4px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.swatch.active {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 2px var(--gold);
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(235, 230, 214, 0.5);
 }
 
 .name-field {
@@ -326,10 +347,11 @@ body.scene-only #app {
 }
 
 .name-field input {
+  flex: 1;
+  min-width: 0;
   font: inherit;
-  width: 150px;
   padding: 6px 8px;
-  min-height: 38px;
+  min-height: 40px;
   color: var(--ink);
   background: var(--panel-solid);
   border: 2px solid rgba(235, 230, 214, 0.3);
@@ -340,10 +362,159 @@ body.scene-only #app {
   .wardrobe {
     left: auto;
     top: 0;
-    width: 360px;
-    justify-content: center;
-    padding: 12px 16px 12px 60px;
-    background: linear-gradient(90deg, transparent, rgba(16, 12, 30, 0.85) 18%);
+    width: 400px;
+    max-height: none;
+    padding: 16px 16px 16px 44px;
+    background: linear-gradient(90deg, transparent, rgba(16, 12, 30, 0.9) 12%);
+  }
+}
+
+/* ---------- Язык и меню ---------- */
+
+.lang-switch {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  right: 10px;
+  display: flex;
+  gap: 4px;
+}
+
+.btn.lang {
+  min-height: 36px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.menu-row {
+  display: flex;
+  gap: 8px;
+}
+
+.menu-row .btn {
+  flex: 1;
+}
+
+.setting.slider input {
+  width: 100%;
+  accent-color: var(--gold);
+}
+
+.badge.dim {
+  background: rgba(235, 230, 214, 0.25);
+  color: var(--ink);
+}
+
+/* ---------- Козырь, таймер, подсказки ---------- */
+
+.top-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.trump-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 6px;
+  background: var(--panel);
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.trump-card {
+  width: 44px;
+  height: 66px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px var(--gold-dark), 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.trump-none {
+  color: var(--ink-dim);
+}
+
+.trump-box .suit.black {
+  color: #e2e2ee;
+}
+
+.timer {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.timer.warn {
+  color: #ff8a7a;
+  animation: pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  to {
+    opacity: 0.45;
+  }
+}
+
+.plate-penalty {
+  color: #ff9a9a;
+  font-size: 12px;
+}
+
+.mine-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.joker-badge {
+  padding: 3px 9px;
+  background: rgba(60, 44, 10, 0.9);
+  border: 2px solid var(--gold);
+  border-radius: 4px;
+  color: var(--gold);
+  font-size: 13px;
+}
+
+.kicked,
+.bid-note {
+  margin: 0;
+  padding: 4px 10px;
+  background: rgba(138, 28, 43, 0.85);
+  border-radius: 4px;
+  font-size: 13px;
+  max-width: 100%;
+}
+
+.bid-note {
+  background: var(--panel);
+  color: var(--ink-dim);
+  font-weight: 400;
+}
+
+.suit-choice {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.btn.suit-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 34px;
+  line-height: 1.1;
+}
+
+.btn.suit-btn small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timer.warn {
+    animation: none;
   }
 }
 

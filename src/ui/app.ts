@@ -1,16 +1,20 @@
-// Управление игрой в браузере: нажатия человека, ходы ботов, анимации 3D-стола, сохранение.
+// Управление игрой в браузере: нажатия человека, ходы ботов, игра с друзьями через сервер,
+// анимации 3D-стола, таймер хода, звук, сохранение.
 // Правила здесь не проверяются — это делает движок (src/engine).
 
 import * as THREE from 'three';
 import { chooseBid, chooseMove } from '../ai/bot';
 import {
+  type BotLevel,
   type GameState,
   type JokerDemand,
   type JokerMode,
   type RuleSettings,
+  type Suit,
   DEFAULT_SETTINGS,
   cardLabel,
   createGame,
+  currentRound,
   dealCards,
   finishTrick,
   firstPlayer,
@@ -20,21 +24,36 @@ import {
   nextRound,
   placeBid,
   playCard,
+  timeoutStrike,
 } from '../engine';
+import { type Language, getLanguage, onLanguageChange, setLanguage, t } from '../i18n';
 import { type Net, clientId, connect, serverUrl } from '../net/client';
 import type { ServerMessage } from '../net/protocol';
 import { pickBotNames } from '../shared/names';
-import { type Skin, randomGender, randomSkin } from '../three/character';
-import { Players } from '../three/players';
+import { repaintCardAtlas } from '../three/cardAtlas';
+import { type Skin, randomGender, randomSkin, sanitizeSkin } from '../three/character';
 import { gfx, saveGfx } from '../three/gfx';
+import { Players } from '../three/players';
 import type { Stage } from '../three/stage';
 import { SEATS } from '../three/table';
 import { tableStateFromGame } from '../three/tableState';
 import { TableView } from '../three/tableView';
 import { TurnMarker } from '../three/turnMarker';
 import { displayName, loadProfile, saveProfile } from './profile';
-import { playCardSound, playShuffleSound, playTrickSound, setSoundEnabled, unlockSound } from './sound';
-import { type UiState, HUMAN, appHtml } from './view';
+import {
+  applySoundSettings,
+  playCardSound,
+  playClickSound,
+  playDealSound,
+  playJokerSound,
+  playPenaltySound,
+  playSlideSound,
+  playTickSound,
+  playTrickSound,
+  setSoundScene,
+  unlockSound,
+} from './sound';
+import { type UiState, type WardrobeTab, HUMAN, appHtml } from './view';
 
 /** Сохранённая партия: состояние движка и внешний вид игроков за столом. */
 interface SavedTable {
@@ -42,12 +61,12 @@ interface SavedTable {
   skins: (Skin | null)[];
 }
 
-const SAVE_KEY = 'painted-seven-save-v3';
-const SETTINGS_KEY = 'painted-seven-settings-v2';
+const SAVE_KEY = 'painted-seven-save-v4';
+const SETTINGS_KEY = 'painted-seven-settings-v3';
 
 // Паузы, чтобы человек успевал следить за игрой (в миллисекундах).
-const BOT_DELAY = 700;
-const TRICK_DELAY = 1300;
+const BOT_DELAY = 800;
+const TRICK_DELAY = 1500;
 
 function load<T>(key: string): T | null {
   try {
@@ -74,16 +93,19 @@ function sleep(ms: number): Promise<void> {
 export function startApp(root: HTMLElement, stage: Stage): void {
   const ui: UiState = {
     screen: 'menu',
-    game: null,
-    settings: { ...DEFAULT_SETTINGS, ...(load<Partial<RuleSettings>>(SETTINGS_KEY) ?? {}) },
-    hasSave: load<SavedTable>(SAVE_KEY) !== null,
-    profile: loadProfile(),
-    modal: { kind: 'none' },
-    selected: null,
-    dealing: false,
     online: null,
     joinCode: (new URLSearchParams(location.search).get('room') ?? '').toUpperCase().slice(0, 5),
     linkCopied: false,
+    game: null,
+    profile: loadProfile(),
+    settings: { ...DEFAULT_SETTINGS, ...(load<Partial<RuleSettings>>(SETTINGS_KEY) ?? {}) },
+    hasSave: load<SavedTable>(SAVE_KEY) !== null,
+    modal: { kind: 'none' },
+    wardrobeTab: 'suit',
+    selected: null,
+    dealing: false,
+    viewChanged: false,
+    notice: null,
   };
   const table = new TableView(stage);
   const marker = new TurnMarker(stage);
@@ -99,12 +121,27 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   /** Идёт ли сейчас автоматическое действие (бот думает, летят карты). */
   let working = false;
   let skipTrickWait: (() => void) | null = null;
+  /** Разница между часами сервера и браузера (мс) — для общего таймера хода. */
+  let clockOffset = 0;
+  let turnTimer = 0;
+  let noticeTimer = 0;
+  let lastTick = -1;
 
   // ---------- Отрисовка ----------
 
   function render(): void {
+    // Не сбиваем ввод: если человек печатает имя или код, поле сохраняет фокус и курсор.
+    const focused = document.activeElement as HTMLInputElement | null;
+    const focusKey = focused?.dataset?.profile ? 'profile' : focused?.dataset?.joinCode !== undefined ? 'join' : null;
+    const caret = focusKey ? focused?.selectionStart ?? null : null;
     root.innerHTML = appHtml(ui);
+    if (focusKey) {
+      const field = root.querySelector<HTMLInputElement>(focusKey === 'profile' ? '[data-profile]' : '[data-join-code]');
+      field?.focus();
+      if (field && caret !== null) field.setSelectionRange(caret, caret);
+    }
     positionPlates();
+    setSoundScene(ui.screen === 'game' ? 'game' : 'menu');
   }
 
   let lastTrickLength = 0;
@@ -113,36 +150,80 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   function syncTable(options: { deal?: boolean } = {}): void {
     const game = ui.game;
     if (!game) return;
-    // Щелчок, когда на стол легла новая карта.
-    if (game.trick.length > lastTrickLength) playCardSound();
+    // Звук, когда на стол легла новая карта; у джокера — свой.
+    if (game.trick.length > lastTrickLength) {
+      if (isJoker(game.trick[game.trick.length - 1].card)) playJokerSound();
+      else playCardSound();
+    }
     lastTrickLength = game.trick.length;
-    if (options.deal) playShuffleSound();
+    if (options.deal) playDealSound(currentRound(game).cards * 4);
     table.selected = ui.selected;
-    table.sync(tableStateFromGame(game, HUMAN), {
-      deal: options.deal,
-      firstSeat: firstPlayer(game),
-    });
+    table.sync(tableStateFromGame(game, HUMAN), { deal: options.deal, firstSeat: firstPlayer(game) });
     const active = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
     marker.show(ui.screen === 'game' ? active : null);
     players.lookAtSeat(active);
   }
 
-  /** Таблички соперников стоят над их креслами: считаем место на экране каждый кадр. */
+  /** Таблички соперников стоят над их головами: считаем место на экране каждый кадр. */
   const anchor = new THREE.Vector3();
   function positionPlates(): void {
     root.querySelectorAll<HTMLElement>('.plate[data-seat]').forEach((plate) => {
       const seat = Number(plate.dataset.seat);
       if (seat === 0) return;
       const spot = SEATS[seat];
-      const point = stage.toScreen(anchor.set(spot.x, 4.9, spot.z));
+      const point = stage.toScreen(anchor.set(spot.x, 5.0, spot.z));
+      plate.style.display = point.visible ? '' : 'none';
       // Не даём табличке уйти за край экрана.
       const half = plate.offsetWidth / 2 + 6;
       const x = Math.min(Math.max(point.x, half), root.clientWidth - half);
       plate.style.left = `${x}px`;
-      plate.style.top = `${Math.max(point.y, plate.offsetHeight + 52)}px`;
+      plate.style.top = `${Math.max(point.y, plate.offsetHeight + 56)}px`;
     });
   }
-  stage.onFrame(positionPlates);
+
+  /** Сколько секунд осталось у ходящего игрока (null — таймера нет). */
+  function secondsLeft(): number | null {
+    const game = ui.game;
+    if (!game || game.settings.turnSeconds <= 0 || game.turnStartedAt === 0) return null;
+    if (game.phase !== 'bidding' && game.phase !== 'playing') return null;
+    const elapsed = (Date.now() + clockOffset - game.turnStartedAt) / 1000;
+    return Math.max(0, game.settings.turnSeconds - elapsed);
+  }
+
+  stage.onFrame(() => {
+    positionPlates();
+    // Таймер хода: цифры и предупреждение на последних секундах.
+    const left = secondsLeft();
+    const element = root.querySelector<HTMLElement>('[data-timer]');
+    if (element) {
+      if (left === null) {
+        element.textContent = '';
+      } else {
+        const whole = Math.ceil(left);
+        element.textContent = `⏱ ${whole}`;
+        element.classList.toggle('warn', whole <= 10);
+        const mine = ui.game?.turn === HUMAN;
+        if (mine && whole <= 5 && whole !== lastTick && whole > 0) playTickSound();
+        lastTick = whole;
+      }
+    }
+    // Кнопка «вернуть вид» появляется, когда игрок повернул камеру.
+    const changed = stage.viewChanged();
+    if (changed !== ui.viewChanged && (ui.screen === 'game' || ui.screen === 'wardrobe')) {
+      ui.viewChanged = changed;
+      render();
+    }
+  });
+
+  function showNotice(text: string): void {
+    ui.notice = text;
+    window.clearTimeout(noticeTimer);
+    noticeTimer = window.setTimeout(() => {
+      ui.notice = null;
+      render();
+    }, 2600);
+    render();
+  }
 
   function save(): void {
     const game = ui.game;
@@ -151,11 +232,38 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     ui.hasSave = game.phase !== 'gameOver';
   }
 
-  // ---------- Ход игры ----------
+  // ---------- Одиночная игра ----------
+
+  /** За это место сейчас ходит бот? (бот или человек, выбывший из раунда за бездействие) */
+  function automatic(game: GameState, player: number): boolean {
+    return player !== HUMAN || game.autoPlay[HUMAN];
+  }
+
+  /** Таймер моего хода в одиночной игре: штраф каждые turnSeconds, потом за меня доигрывает бот. */
+  function armTurnTimer(): void {
+    window.clearTimeout(turnTimer);
+    const game = ui.game;
+    if (!game || ui.online || game.settings.turnSeconds <= 0) return;
+    if ((game.phase !== 'bidding' && game.phase !== 'playing') || automatic(game, game.turn)) return;
+    if (game.turnStartedAt === 0) game.turnStartedAt = Date.now();
+    const mySession = session;
+    const deadline = game.turnStartedAt + game.settings.turnSeconds * 1000;
+    turnTimer = window.setTimeout(() => {
+      if (mySession !== session || ui.game !== game || ui.screen !== 'game') return;
+      if ((game.phase !== 'bidding' && game.phase !== 'playing') || game.turn !== HUMAN) return;
+      timeoutStrike(game);
+      game.turnStartedAt = Date.now();
+      playPenaltySound();
+      ui.selected = null;
+      ui.modal = { kind: 'none' };
+      showNotice(t('timer.penalty', { n: game.settings.timeoutPenalty }));
+      void advance(); // если игрок выбыл из раунда — дальше ходит бот
+    }, Math.max(0, deadline - Date.now()));
+  }
 
   /** Двигает партию вперёд, пока не понадобится решение человека. */
   async function advance(): Promise<void> {
-    if (working) return;
+    if (working || ui.online) return;
     working = true;
     const mySession = session;
     const alive = () => mySession === session && ui.screen === 'game' && ui.game !== null;
@@ -176,18 +284,19 @@ export function startApp(root: HTMLElement, stage: Stage): void {
           syncTable({ deal: true });
           await waitForCards();
           ui.dealing = false;
-        } else if (game.phase === 'bidding') {
-          if (game.turn === HUMAN) break;
+        } else if (game.phase === 'bidding' || game.phase === 'playing') {
+          if (!automatic(game, game.turn)) break;
           await sleep(BOT_DELAY);
           if (!alive()) break;
-          placeBid(game, game.turn, chooseBid(game, game.turn));
-        } else if (game.phase === 'playing') {
-          if (game.turn === HUMAN) break;
-          await sleep(BOT_DELAY);
-          if (!alive()) break;
-          const move = chooseMove(game, game.turn);
-          players.throwCard(game.turn);
-          playCard(game, game.turn, move.card, move.joker);
+          // За выбывшего человека бот играет на обычном уровне.
+          const level: BotLevel | undefined = game.turn === HUMAN ? 'normal' : undefined;
+          if (game.phase === 'bidding') {
+            placeBid(game, game.turn, chooseBid(game, game.turn, level));
+          } else {
+            const move = chooseMove(game, game.turn, level);
+            players.throwCard(game.turn);
+            playCard(game, game.turn, move.card, move.joker);
+          }
         } else if (game.phase === 'trickEnd') {
           // Даём рассмотреть взятку (нажатие на стол ускоряет), потом она улетает к победителю.
           await Promise.race([sleep(TRICK_DELAY), new Promise<void>((resolve) => (skipTrickWait = resolve))]);
@@ -211,6 +320,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         ui.dealing = false;
         render();
         syncTable();
+        armTurnTimer();
       }
     }
   }
@@ -226,26 +336,52 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   const incoming: GameState[] = [];
   let processing = false;
 
-  function lobbyError(message: string): void {
-    ui.online = { status: 'ready', code: null, seats: [], host: false, started: false, ...(ui.online ?? {}), error: message };
-    ui.online.status = 'ready';
+  function lobbyError(key: string): void {
+    ui.online = {
+      status: 'ready',
+      code: ui.online?.code ?? null,
+      seats: ui.online?.seats ?? [],
+      host: ui.online?.host ?? false,
+      started: ui.online?.started ?? false,
+      botLevel: ui.online?.botLevel ?? 'normal',
+      bots: ui.online?.bots ?? 0,
+      error: key,
+    };
     render();
+  }
+
+  /** Код комнаты, в которой мы сейчас играем: после перезагрузки страницы вернёмся в неё. */
+  const ROOM_KEY = 'painted-seven-room';
+  function rememberRoom(code: string | null): void {
+    try {
+      if (code) localStorage.setItem(ROOM_KEY, code);
+      else localStorage.removeItem(ROOM_KEY);
+    } catch {
+      // хранилище недоступно — просто не вернёмся автоматически
+    }
+  }
+  function rememberedRoom(): string {
+    try {
+      return (localStorage.getItem(ROOM_KEY) ?? '').toUpperCase().slice(0, 5);
+    } catch {
+      return '';
+    }
   }
 
   async function ensureNet(): Promise<Net | null> {
     if (net) return net;
     const url = serverUrl();
     if (!url) {
-      lobbyError('Сервер для игры с друзьями ещё не подключён. Как его запустить — в README.');
+      lobbyError('err.noServer');
       return null;
     }
-    ui.online = { status: 'connecting', code: null, seats: [], host: false, started: false, error: null };
+    ui.online = { status: 'connecting', code: null, seats: [], host: false, started: false, botLevel: 'normal', bots: 0, error: null };
     render();
     try {
       net = await connect(url, { onMessage: onServerMessage, onClose: onServerClose });
       return net;
     } catch {
-      lobbyError('Не удалось подключиться к серверу. Проверьте интернет и попробуйте ещё раз.');
+      lobbyError('err.connect');
       return null;
     }
   }
@@ -254,34 +390,40 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     net = null;
     if (!ui.online) return;
     const code = ui.online.code;
-    leaveOnline();
+    leaveOnline(false);
     ui.screen = 'lobby';
     ui.joinCode = code ?? ui.joinCode;
-    lobbyError('Связь с сервером потеряна. Нажмите «Войти», чтобы вернуться в комнату.');
+    lobbyError('err.lost');
   }
 
   function onServerMessage(message: ServerMessage): void {
     if (message.t === 'error') {
+      // Комнаты больше нет (сервер перезапустился) или партия ушла без нас — не пытаемся вернуться.
+      if (message.message === 'err.noRoom' || message.message === 'err.started') rememberRoom(null);
       if (ui.screen === 'lobby') lobbyError(message.message);
       else console.error(message.message);
       return;
     }
     if (message.t === 'room') {
+      rememberRoom(message.code);
       ui.online = {
         status: 'ready',
         code: message.code,
         seats: message.seats,
         host: message.host,
         started: message.started,
+        botLevel: message.botLevel,
+        bots: message.bots,
         error: null,
       };
-      if (message.started) {
-        skins = message.seats.map((seat) => seat?.skin ?? null);
+      if (message.started && skins.length === 0) {
+        skins = message.seats.map((seat) => (seat ? sanitizeSkin(seat.skin) : null));
         players.seat(skins);
       }
-      if (ui.screen === 'lobby') render();
+      render(); // лобби и окно итогов показывают, кто готов
       return;
     }
+    clockOffset = message.now - Date.now();
     incoming.push(message.game);
     void processIncoming();
   }
@@ -306,12 +448,16 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         if (previous && next.trick.length > previous.trick.length) {
           players.throwCard(next.trick[next.trick.length - 1].player);
         }
+        // Штраф за просроченный ход — сообщаем тому, кого оштрафовали.
+        if (previous && next.penalties[HUMAN] < previous.penalties[HUMAN] && next.roundIndex === previous.roundIndex) {
+          playPenaltySound();
+          showNotice(t('timer.penalty', { n: next.settings.timeoutPenalty }));
+        }
         const dealtNow = next.dealt && (!previous || !previous.dealt || previous.roundIndex !== next.roundIndex);
 
         ui.game = next;
         ui.screen = 'game';
-        ui.selected = null;
-        if (next.phase !== 'roundEnd' && next.phase !== 'gameOver' && ui.modal.kind === 'none') ui.modal = { kind: 'none' };
+        if (previous && previous.turn !== next.turn) ui.selected = null;
 
         if (next.phase === 'deal') {
           ui.dealing = true;
@@ -342,19 +488,22 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     }
   }
 
-  function leaveOnline(): void {
+  /** Выйти из комнаты. `forget` — игрок ушёл сам (а не потерял связь): больше не возвращаем его. */
+  function leaveOnline(forget = true): void {
+    if (forget) rememberRoom(null);
     net?.send({ t: 'leave' });
     net?.close();
     net = null;
     incoming.length = 0;
     ui.online = null;
+    skins = [];
     session++;
     working = false;
   }
 
   // ---------- Действия человека ----------
 
-  /** Действие человека: выполнить и продолжить партию. */
+  /** Действие человека в одиночной игре: выполнить и продолжить партию. */
   function act(action: () => void): void {
     try {
       action();
@@ -362,12 +511,13 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       console.error(error); // нелегальное действие движок отклоняет — состояние не портится
     }
     ui.selected = null;
+    window.clearTimeout(turnTimer);
     void advance();
   }
 
   function myTurnToPlay(): GameState | null {
     const game = ui.game;
-    return game && !working && game.phase === 'playing' && game.turn === HUMAN ? game : null;
+    return game && !working && game.phase === 'playing' && game.turn === HUMAN && !game.autoPlay[HUMAN] ? game : null;
   }
 
   /** Нажатие на карту в руке: первое выбирает, второе ходит. */
@@ -378,12 +528,13 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     if (!card) return; // этой картой сейчас ходить нельзя
     if (ui.selected !== label) {
       ui.selected = label;
+      playSlideSound();
       render();
       syncTable();
       return;
     }
     if (isJoker(card)) {
-      ui.modal = { kind: 'joker', mode: null }; // сначала спросим, как сыграть джокер
+      ui.modal = { kind: 'joker', mode: null, pickSuit: false }; // сначала спросим, как сыграть джокер
       render();
       return;
     }
@@ -395,51 +546,78 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     act(() => playCard(game, HUMAN, card));
   }
 
-  function playJoker(mode: JokerMode, demand?: JokerDemand): void {
+  function playJoker(mode: JokerMode, demand?: JokerDemand, suit?: Suit): void {
     const game = myTurnToPlay();
     const card = game?.hands[HUMAN].find(isJoker);
     ui.modal = { kind: 'none' };
     if (!game || !card) return;
+    const joker = { mode, demand, suit };
     if (net) {
       ui.selected = null;
-      net.send({ t: 'play', card, joker: { mode, demand } });
+      net.send({ t: 'play', card, joker });
       return;
     }
-    act(() => playCard(game, HUMAN, card, { mode, demand }));
+    act(() => playCard(game, HUMAN, card, joker));
   }
 
   function startGame(game: GameState, tableSkins: (Skin | null)[]): void {
-    skins = tableSkins;
+    skins = tableSkins.map((skin) => (skin ? sanitizeSkin(skin) : null));
     players.seat(skins);
     session++;
     working = false;
+    lastTrickLength = game.trick.length;
     ui.game = game;
     ui.screen = 'game';
     ui.modal = { kind: 'none' };
     ui.selected = null;
+    stage.resetView();
     void advance();
+  }
+
+  function setModal(kind: 'rules' | 'sheet' | 'quit' | 'settings'): void {
+    ui.modal = { kind };
+    render();
   }
 
   function handleAction(action: string, value: string): void {
     const game = ui.game;
     switch (action) {
-      case 'start':
-        {
-          // С каждой новой игрой у ботов новые имена и внешность; имя соответствует полу персонажа.
-          const genders = [randomGender(), randomGender(), randomGender()];
-          const myName = displayName(ui.profile);
-          const names = pickBotNames(genders, [myName]);
-          startGame(createGame({ settings: ui.settings, playerNames: [myName, ...names] }), [
-            ui.profile.skin,
-            ...genders.map((gender) => randomSkin(gender)),
-          ]);
-        }
-        break;
-      case 'continue': {
-        const saved = load<SavedTable>(SAVE_KEY);
-        if (saved) startGame(saved.game, saved.skins);
+      case 'start': {
+        // С каждой новой игрой у ботов новые имена и внешность; имя соответствует полу персонажа.
+        const genders = [randomGender(), randomGender(), randomGender()];
+        const myName = displayName(ui.profile);
+        const names = pickBotNames(genders, [myName]);
+        startGame(createGame({ settings: ui.settings, playerNames: [ui.profile.name.trim(), ...names] }), [
+          ui.profile.skin,
+          ...genders.map((gender) => randomSkin(gender)),
+        ]);
         break;
       }
+      case 'continue': {
+        const saved = load<SavedTable>(SAVE_KEY);
+        if (saved) {
+          saved.game.turnStartedAt = 0; // время на ход начинается заново, когда партию продолжили
+          startGame(saved.game, saved.skins);
+        }
+        break;
+      }
+      case 'to-menu':
+        if (ui.online) leaveOnline();
+        session++;
+        working = false;
+        window.clearTimeout(turnTimer);
+        ui.screen = 'menu';
+        ui.modal = { kind: 'none' };
+        marker.show(null);
+        stage.resetView();
+        render();
+        break;
+      case 'language':
+        setLanguage(value as Language);
+        break;
+      case 'reset-view':
+        stage.resetView();
+        break;
       case 'open-lobby':
         ui.screen = 'lobby';
         ui.online = null;
@@ -463,7 +641,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         break;
       case 'join-room':
         if (ui.joinCode.length < 5) {
-          lobbyError('Введите код комнаты из пяти символов.');
+          lobbyError('err.codeLength');
           break;
         }
         void ensureNet().then((connection) =>
@@ -487,15 +665,6 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         });
         break;
       }
-      case 'to-menu':
-        if (ui.online) leaveOnline();
-        session++;
-        working = false;
-        ui.screen = 'menu';
-        ui.modal = { kind: 'none' };
-        marker.show(null);
-        render();
-        break;
       case 'open-wardrobe':
         ui.screen = 'wardrobe';
         players.showWardrobe(ui.profile.skin);
@@ -506,42 +675,40 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         players.showWardrobe(null);
         render();
         break;
+      case 'wardrobe-tab':
+        ui.wardrobeTab = value as WardrobeTab;
+        render();
+        break;
       case 'skin': {
         // value вида «tie:3» или «gender:female».
         const [key, raw] = value.split(':');
-        const skin = { ...ui.profile.skin, [key]: key === 'gender' ? raw : Number(raw) } as Skin;
+        const skin = sanitizeSkin({ ...ui.profile.skin, [key]: key === 'gender' ? raw : Number(raw) });
         ui.profile = { ...ui.profile, skin };
         saveProfile(ui.profile);
         players.showWardrobe(skin);
         render();
         break;
       }
-      case 'toggle-sound':
-        gfx.sound = !gfx.sound;
-        setSoundEnabled(gfx.sound);
-        saveGfx();
-        render();
-        break;
       case 'open-rules':
       case 'open-sheet':
       case 'open-quit':
       case 'open-settings':
-        ui.modal = { kind: action.slice(5) as 'rules' | 'sheet' | 'quit' | 'settings' };
-        render();
+        setModal(action.slice(5) as 'rules' | 'sheet' | 'quit' | 'settings');
         break;
       case 'close-modal':
         ui.modal = { kind: 'none' };
         render();
         break;
       case 'bid':
-        if (game && !working && net) net.send({ t: 'bid', bid: Number(value) });
-        else if (game && !working) act(() => placeBid(game, HUMAN, Number(value)));
+        if (!game || working) break;
+        if (net) net.send({ t: 'bid', bid: Number(value) });
+        else act(() => placeBid(game, HUMAN, Number(value)));
         break;
       case 'joker-mode': {
         const mode = value as JokerMode;
         // Если это заход — спросим ещё, что потребовать у остальных.
         if (game && jokerDemandsFor(game).length > 0) {
-          ui.modal = { kind: 'joker', mode };
+          ui.modal = { kind: 'joker', mode, pickSuit: false };
           render();
         } else {
           playJoker(mode);
@@ -549,28 +716,38 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         break;
       }
       case 'joker-demand':
-        if (ui.modal.kind === 'joker' && ui.modal.mode) {
+        if (ui.modal.kind !== 'joker' || !ui.modal.mode) break;
+        if (value === 'suit') {
+          ui.modal = { kind: 'joker', mode: ui.modal.mode, pickSuit: true }; // сначала выберем масть
+          render();
+        } else {
           playJoker(ui.modal.mode, value ? (value as JokerDemand) : undefined);
         }
         break;
+      case 'joker-suit':
+        if (ui.modal.kind === 'joker' && ui.modal.mode) playJoker(ui.modal.mode, 'suit', value as Suit);
+        break;
       case 'next-round':
-        ui.modal = { kind: 'none' };
-        if (net) net.send({ t: 'next' });
-        else if (game) act(() => nextRound(game));
+        if (net) {
+          net.send({ t: 'ready' }); // с друзьями раунд начнётся, когда готовы все
+        } else if (game) {
+          ui.modal = { kind: 'none' };
+          act(() => nextRound(game));
+        }
         break;
       default:
         break;
     }
   }
 
-  // Один обработчик на весь интерфейс: ищем ближайший элемент с data-action.
-  setSoundEnabled(gfx.sound);
   // Браузер разрешает звук только после первого нажатия человека.
-  window.addEventListener('pointerdown', unlockSound, { once: false, passive: true });
+  window.addEventListener('pointerdown', unlockSound, { passive: true });
 
+  // Один обработчик на весь интерфейс: ищем ближайший элемент с data-action.
   root.addEventListener('click', (event) => {
     const element = (event.target as HTMLElement).closest<HTMLElement>('[data-action]');
     if (!element || (element as HTMLButtonElement).disabled) return;
+    playClickSound();
     handleAction(element.dataset.action ?? '', element.dataset.value ?? '');
   });
 
@@ -592,34 +769,58 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     }
   });
 
-  // Имя игрока в «Гардеробе».
+  // Наведение мыши: карта, которой можно ходить, приподнимается.
+  stage.canvas.addEventListener('pointermove', (event) => {
+    if (ui.screen !== 'game' || event.pointerType === 'touch') return;
+    const hovered = myTurnToPlay() ? table.pick(event.clientX, event.clientY) : null;
+    table.hovered = hovered;
+    stage.canvas.style.cursor = hovered ? 'pointer' : '';
+  });
+
+  // Поля ввода: имя игрока и код комнаты; ползунки громкости.
   root.addEventListener('input', (event) => {
     const element = event.target as HTMLInputElement;
     if (element.dataset?.joinCode !== undefined) {
       ui.joinCode = element.value.toUpperCase().slice(0, 5);
-      return;
+    } else if (element.dataset?.profile === 'name') {
+      ui.profile = { ...ui.profile, name: element.value };
+      saveProfile(ui.profile);
+    } else if (element.dataset?.gfx === 'musicVolume' || element.dataset?.gfx === 'sfxVolume') {
+      // Громкость применяется сразу, пока тянут ползунок.
+      gfx[element.dataset.gfx as 'musicVolume' | 'sfxVolume'] = Number(element.value);
+      const label = root.querySelector(`[data-value-of="${element.dataset.gfx}"]`);
+      if (label) label.textContent = element.value;
+      applySoundSettings();
+      saveGfx();
     }
-    if (element.dataset?.profile !== 'name') return;
-    ui.profile = { ...ui.profile, name: element.value };
-    saveProfile(ui.profile);
   });
 
-  // Настройки правил в меню.
+  // Выпадающие списки: правила партии, язык, звук и графика, сложность ботов в комнате.
   root.addEventListener('change', (event) => {
     const element = event.target as HTMLSelectElement;
-    const gfxKey = element.dataset?.gfx;
-    if (gfxKey) {
-      // Настройки звука и графики применяются сразу.
-      if (gfxKey === 'sound') gfx.sound = element.value === 'true';
-      if (gfxKey === 'bloom') gfx.bloom = element.value === 'true';
-      if (gfxKey === 'quality') gfx.quality = element.value === 'low' ? 'low' : 'high';
-      if (gfxKey === 'pixelScale') gfx.pixelScale = Number(element.value);
-      setSoundEnabled(gfx.sound);
-      saveGfx();
-      stage.applySettings();
+    const data = element.dataset ?? {};
+    if (data.language !== undefined) {
+      setLanguage(element.value as Language);
       return;
     }
-    const key = element.dataset?.setting as keyof RuleSettings | undefined;
+    if (data.roomLevel !== undefined) {
+      net?.send({ t: 'config', botLevel: element.value as BotLevel });
+      return;
+    }
+    if (data.gfx) {
+      if (data.gfx === 'music') gfx.music = element.value === 'true';
+      if (data.gfx === 'sfx') gfx.sfx = element.value === 'true';
+      if (data.gfx === 'bloom') gfx.bloom = element.value === 'true';
+      if (data.gfx === 'quality') gfx.quality = element.value === 'low' ? 'low' : 'high';
+      if (data.gfx === 'pixelScale') gfx.pixelScale = Number(element.value);
+      if (data.gfx === 'musicVolume' || data.gfx === 'sfxVolume') return; // ползунки обработаны выше
+      applySoundSettings();
+      saveGfx();
+      stage.applySettings();
+      render();
+      return;
+    }
+    const key = data.setting as keyof RuleSettings | undefined;
     if (!key) return;
     const raw = element.value;
     const value = raw === 'true' ? true : raw === 'false' ? false : /^-?\d+$/.test(raw) ? Number(raw) : raw;
@@ -627,10 +828,21 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     store(SETTINGS_KEY, ui.settings);
   });
 
+  // Смена языка: перерисовать интерфейс и буквы рангов на картах.
+  onLanguageChange(() => {
+    document.documentElement.lang = getLanguage();
+    repaintCardAtlas();
+    render();
+  });
+
   // Для проверки из консоли браузера.
-  Object.assign(window, { paintedSeven: { ui, table, tapCard, isWorking: () => working } });
+  Object.assign(window, { paintedSeven: { ui, table, players, stage, tapCard, isWorking: () => working } });
 
   // Открыли ссылку-приглашение (?room=КОД) — сразу показываем вход в комнату.
+  // Перезагрузили страницу посреди сетевой игры — сразу возвращаемся на своё место.
+  const returning = !ui.joinCode && rememberedRoom();
+  if (returning) ui.joinCode = returning;
   if (ui.joinCode) ui.screen = 'lobby';
   render();
+  if (returning) handleAction('join-room', '');
 }
