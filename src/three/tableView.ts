@@ -36,9 +36,9 @@ export interface HandAnchor {
 const DECK_POSITION = new THREE.Vector3(-3.0, 0.02, -3.35);
 /** Где лежит открытый козырь, когда он не в руке у раздающего: рядом с колодой. */
 const TRUMP_POSITION = new THREE.Vector3(-1.6, 0.08, -3.85);
-/** Ряд, в который ложатся карты взятки: по центру стола, дальше от меня. */
-const TRICK_ROW_Z = -1.45;
-const TRICK_SPACING = 1.6;
+/** Круг, по которому ложатся карты взятки: центр чуть дальше от меня, чем центр стола. */
+const TRICK_CENTER_Z = -0.6;
+const TRICK_RADIUS = 1.65;
 /** На каком расстоянии от глаз держится мой веер (ближе ближней плоскости камеры нельзя). */
 const HAND_NEAR = 1.6;
 /** Сколько секунд козырь показывается всем после раздачи. */
@@ -115,15 +115,19 @@ export class TableView {
   }
 
   /**
-   * Карты взятки ложатся в ряд по центру стола, слева направо в порядке хода,
-   * лицом ко мне — так их видно поверх моей руки. Чуть повёрнуты к тому, кто сходил.
+   * Карты взятки ложатся по кругу: каждая — перед тем, кто ею сходил, и повёрнута к нему.
+   * Круг сдвинут от меня вглубь стола, чтобы мой веер его не закрывал.
    */
   private trickPose(seat: number, order: number, card: Card): Pose {
-    const toward = seat === 1 ? 0.12 : seat === 3 ? -0.12 : 0;
+    const spot = SEATS[seat];
     return {
-      position: new THREE.Vector3((order - 1.5) * TRICK_SPACING, 0.09 + order * 0.012, TRICK_ROW_Z),
-      quaternion: lying(toward + jitter(cardLabel(card)) * 0.4, true),
-      scale: 1.3, // карты взятки крупнее: их должны прочитать все
+      position: new THREE.Vector3(
+        Math.sign(spot.x) * TRICK_RADIUS,
+        0.09 + order * 0.03,
+        TRICK_CENTER_Z + Math.sign(spot.z) * TRICK_RADIUS,
+      ),
+      quaternion: lying(spot.angle + jitter(cardLabel(card)), true),
+      scale: 1.4, // карты взятки крупнее: их должны прочитать все
     };
   }
 
@@ -173,7 +177,7 @@ export class TableView {
       // Веер не у самого края экрана, а чуть выше — над краем стола.
       const local = new THREE.Vector3(
         offset * spacing,
-        -halfHeight * 0.58 - offset * offset * 0.012 + raised,
+        -halfHeight * 0.7 - offset * offset * 0.012 + raised,
         -distance + index * 0.02,
       ).multiplyScalar(shrink);
       return {
@@ -296,8 +300,24 @@ export class TableView {
     });
 
     if (!state.trumpCard) this.hideTrump();
-    else if (options.deal) this.showTrump(state.trumpCard, 0.6 + state.hands.flat().length * 0.085);
+    else if (options.deal) {
+      const delay = 0.6 + state.hands.flat().length * 0.085;
+      // Крупно всем показываем только последнюю карту раздающего (раунды по 9 карт):
+      // она видна всем, а потом уходит ему в руку. Иначе козырь просто открывается на столе у колоды.
+      if (state.trumpSeat !== null) this.showTrump(state.trumpCard, delay);
+      else this.layTrump(state.trumpCard, delay);
+    }
     else if (this.trumpTimer <= 0) this.restTrump(state.trumpCard, state.trumpSeat);
+  }
+
+  /** Козырь с верха колоды переворачивается и ложится рядом с ней. */
+  private layTrump(card: Card, delay: number): void {
+    this.trumpTimer = 0;
+    this.trumpCard.setFace(card);
+    this.trumpCard.setLook('normal');
+    this.trumpCard.place({ position: DECK_POSITION.clone().setY(0.6), quaternion: lying(0.35, false), scale: 1 });
+    this.trumpCard.mesh.visible = true;
+    void this.trumpCard.moveTo(this.trumpRestPose(), { duration: 0.5, arc: 0.5, delay });
   }
 
   /** Козырь без показа (например, продолжили сохранённую партию): сразу на своё место. */
@@ -420,8 +440,10 @@ export class TableView {
       const up = new THREE.Vector3(0, 1, 0);
       if (!onTable) up.applyQuaternion(joker.mesh.quaternion); // в руке — над верхним краем карты
       this.crystal.visible = true;
-      this.crystal.position.copy(joker.mesh.position).addScaledVector(up, (onTable ? 0.7 : 0.98) + Math.sin(time * 2.4) * 0.05);
-      this.crystal.scale.set(1, 1.5, 1).multiplyScalar(onTable ? 1.4 : 1);
+      // Размер и отступ — в масштабе карты: мой веер стоит у самых глаз и уменьшен.
+      const size = onTable ? 1 : joker.mesh.scale.x;
+      this.crystal.position.copy(joker.mesh.position).addScaledVector(up, ((onTable ? 0.7 : 0.98) + Math.sin(time * 2.4) * 0.05) * size);
+      this.crystal.scale.set(1, 1.5, 1).multiplyScalar(onTable ? 1.4 : size);
       this.crystal.rotation.y = time * 2;
     } else {
       this.crystal.visible = false;

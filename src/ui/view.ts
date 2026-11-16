@@ -475,10 +475,12 @@ function hudHtml(ui: UiState, game: GameState): string {
   return `<div class="hud">
     ${topbarHtml(ui, game)}
     ${plates}
-    <div class="bottom">
+    <div class="top-status">
       ${kicked}
       <p class="status-text">${statusText(ui, game)}</p>
       <div class="actions">${actionsHtml(ui, game)}</div>
+    </div>
+    <div class="bottom">
       <div class="mine-row">
         ${plateHtml(game, HUMAN)}
         ${hasJoker ? `<span class="joker-badge">★ ${t('hud.joker')}</span>` : ''}

@@ -125,7 +125,7 @@ export function createStage(container: HTMLElement): Stage {
     // На вертикальном телефоне садимся чуть дальше и выше, чтобы стол помещался в кадр.
     return {
       target: new THREE.Vector3(0, 0, 0),
-      eye: new THREE.Vector3(0, THREE.MathUtils.lerp(3.8, 4.8, narrow), THREE.MathUtils.lerp(7.5, 8.8, narrow)),
+      eye: new THREE.Vector3(0, THREE.MathUtils.lerp(4.0, 5.0, narrow), THREE.MathUtils.lerp(8.1, 9.3, narrow)),
       azimuth: 0,
       elevation: pitch,
       distance: 0,
@@ -232,7 +232,8 @@ export function createStage(container: HTMLElement): Stage {
     raycaster.setFromCamera(pointer, camera);
     raycaster.far = 40; // фон (море, город) не приближаем
     const hit = raycaster.intersectObjects(scene.children, true).find((h) => h.object.visible && h.distance > 2);
-    if (hit) orbit.focus(hit.point, view === 'wardrobe' ? 4.5 : 5);
+    // Только в гардеробе: за столом двойное нажатие — это ход картой, камера не должна прыгать вперёд.
+    if (hit && view === 'wardrobe') orbit.focus(hit.point, 4.5);
   });
 
   const callbacks: ((time: number, delta: number) => void)[] = [];
