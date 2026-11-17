@@ -37,25 +37,29 @@ class Palette:
 
 
 class Grid:
-    def __init__(self, voxel, size_xy, height, origin_z=0.0):
-        """voxel — размер кубика, м; size_xy — ширина области по X и Y, м; height — высота, м."""
+    def __init__(self, voxel, size_xy, height, origin_z=0.0, size_y=None):
+        """voxel — размер кубика, м; size_xy — ширина области по X (и по Y, если size_y не задан), м;
+        height — высота, м. Область стоит по центру X/Y = 0, низ — origin_z."""
         self.v = voxel
-        self.n = int(round(size_xy / voxel))
+        self.nx = int(round(size_xy / voxel))
+        self.ny = int(round((size_y if size_y is not None else size_xy) / voxel))
+        self.n = self.nx                       # (для совместимости с круглыми деталями)
         self.nz = int(round(height / voxel))
-        n, nz = self.n, self.nz
+        nx, ny, nz = self.nx, self.ny, self.nz
         # Центры кубиков строго симметричны относительно 0 (иначе погрешность чисел ломает симметрию).
-        c = (np.arange(n) - (n - 1) / 2) * voxel
+        cx = (np.arange(nx) - (nx - 1) / 2) * voxel
+        cy = (np.arange(ny) - (ny - 1) / 2) * voxel
         cz = (np.arange(nz) + 0.5) * voxel + origin_z
-        self.X, self.Y, self.Z = np.meshgrid(c, c, cz, indexing="ij")
+        self.X, self.Y, self.Z = np.meshgrid(cx, cy, cz, indexing="ij")
         self.R = np.sqrt(self.X ** 2 + self.Y ** 2)
         self.A = np.arctan2(self.Y, self.X)
-        self.I, self.J, self.K = np.meshgrid(np.arange(n), np.arange(n), np.arange(nz), indexing="ij")
+        self.I, self.J, self.K = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing="ij")
         # Номер кубика от центра (0, 1, 2… в обе стороны) — для СИММЕТРИЧНЫХ узоров и пазов.
-        sym = np.floor(np.abs(np.arange(n) - (n - 1) / 2)).astype(int)
-        self.SI, self.SJ = sym[self.I], sym[self.J]
-        self.mat = np.zeros((n, n, nz), dtype=np.int16)
-        self.shade = np.zeros((n, n, nz), dtype=np.int16)   # поправка оттенка у каждого вокселя
-        self.origin = (-n * voxel / 2, -n * voxel / 2, origin_z)
+        self.SI = np.floor(np.abs(np.arange(nx) - (nx - 1) / 2)).astype(int)[self.I]
+        self.SJ = np.floor(np.abs(np.arange(ny) - (ny - 1) / 2)).astype(int)[self.J]
+        self.mat = np.zeros((nx, ny, nz), dtype=np.int16)
+        self.shade = np.zeros((nx, ny, nz), dtype=np.int16)   # поправка оттенка у каждого вокселя
+        self.origin = (-nx * voxel / 2, -ny * voxel / 2, origin_z)
 
     # --- формы (возвращают маску) ---------------------------------------------------
     def zs(self, z0, z1):
@@ -72,6 +76,28 @@ class Grid:
         ax, ay = np.abs(self.X), np.abs(self.Y)
         return (ax < half) & (ay < half) & (ax + ay < half * (2 - chamfer)) & self.zs(z0, z1)
 
+    def box(self, x0, x1, y0, y1, z0, z1):
+        """Прямоугольный брус (границы в метрах)."""
+        return (self.X >= x0) & (self.X < x1) & (self.Y >= y0) & (self.Y < y1) & self.zs(z0, z1)
+
+    def square_at(self, cx, cy, half, z0, z1, round_corners=False, half_y=None):
+        """Прямоугольник с центром (cx, cy). round_corners — срезать угловой кубик (выглядит «круглее»).
+        Чтобы деталь была симметричной, ставь центр на границу кубиков, а half делай кратным размеру кубика."""
+        hy = half if half_y is None else half_y
+        ax, ay = np.abs(self.X - cx), np.abs(self.Y - cy)
+        m = (ax < half) & (ay < hy) & self.zs(z0, z1)
+        if round_corners:
+            m &= ~((ax > half - self.v) & (ay > hy - self.v))
+        return m
+
+    def turned_square(self, cx, cy, profile):
+        """«Точёная» деталь с КВАДРАТНЫМ сечением (балясины в воксельном стиле).
+        profile — список (полуширина, z0, z1, скруглить_углы) снизу вверх."""
+        m = np.zeros(self.mat.shape, dtype=bool)
+        for half, z0, z1, rounded in profile:
+            m |= self.square_at(cx, cy, half, z0, z1, rounded)
+        return m
+
     def cross(self, half_width, length, z0, z1):
         ax, ay = np.abs(self.X), np.abs(self.Y)
         return (((ax < half_width) & (ay < length)) | ((ay < half_width) & (ax < length))) & self.zs(z0, z1)
@@ -86,9 +112,15 @@ class Grid:
         """Сдвинуть оттенок вокселей (полосы, швы, узор)."""
         self.shade[mask & (self.mat > 0)] += delta
 
-    def noise(self, material, chance_dark=0.18, chance_light=0.1, seed=1):
+    def noise(self, material, chance_dark=0.18, chance_light=0.1, seed=1, blot=1):
+        """Случайные пятна оттенка. blot — размер пятна в кубиках (1 — «крапинка», 3 — мягкие пятна камня)."""
         rng = np.random.default_rng(seed)
-        r = rng.random(self.mat.shape)
+        if blot > 1:
+            small = rng.random(tuple(s // blot + 1 for s in self.mat.shape))
+            r = np.repeat(np.repeat(np.repeat(small, blot, 0), blot, 1), blot, 2)
+            r = r[:self.mat.shape[0], :self.mat.shape[1], :self.mat.shape[2]]
+        else:
+            r = rng.random(self.mat.shape)
         sel = self.mat == material
         self.shade[sel & (r < chance_dark)] -= 1
         self.shade[sel & (r > 1 - chance_light)] += 1
@@ -100,10 +132,10 @@ class Grid:
         face_light = face_light or {"top": 1, "side": 0, "bottom": -2}
         solid = self.mat > 0
         pad = np.pad(solid, 1)
-        n, nz = self.n, self.nz
+        nx, ny, nz = self.nx, self.ny, self.nz
 
         def neighbor(dx, dy, dz):
-            return pad[1 + dx:1 + dx + n, 1 + dy:1 + dy + n, 1 + dz:1 + dz + nz]
+            return pad[1 + dx:1 + dx + nx, 1 + dy:1 + dy + ny, 1 + dz:1 + dz + nz]
 
         above = neighbor(0, 0, 1)
         below = neighbor(0, 0, -1)
