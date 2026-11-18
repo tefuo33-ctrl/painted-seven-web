@@ -46,6 +46,7 @@ INCLUDE_TERRACE = True       # для превью поставить спере
 # (колонны встают у краёв кадра на линии балюстрады, перила входят прямо в них; над ними — арка).
 MID_BALUSTERS = 18
 SIDE_BALUSTERS = 6
+FLOOR_Y = -0.20 - 7 * 0.56   # центр пола: ряд швов проходит по y = -0.20 (кромка цоколя балюстрады)
 TABLE_POS = (0.0, -2.3)      # покерный стол (только для вида «из-за стола»): 2.3 м перед балюстрадой
 TABLE_CAM = dict(loc=(0.0, -4.7, 1.55), hfov=56.0, pitch=-9.6)   # вид как на картинке с игроками (подогнан по сетке)
 SEED = 3
@@ -345,7 +346,7 @@ def build_terrace(col):
     SIDE_BALUSTERS балясин, которые без тумбы входят прямо в колонны. Колонны стоят на линии балюстрады
     у краёв кадра, на них — одна широкая арка. Вазоны с цветами — перед колоннами."""
     from parts import arch, balustrade, column, lantern, urn
-    from voxel import Grid, hex_srgb
+    from voxel import Grid
     sp = balustrade.SPACING
     post = 2 * balustrade.POST_HALF
     mid_run, side_run = MID_BALUSTERS * sp, SIDE_BALUSTERS * sp
@@ -396,29 +397,11 @@ def build_terrace(col):
         col.objects.link(c)
         c.location = (ux, uy, 0)
         objs += [o, c]
-    verts, faces, cols = [], [], []
-    tones = ["#b48c78", "#c49c86", "#a8826e"]
-    frng = np.random.default_rng(9)
-    for i in range(-10, 10):
-        for j in range(-14, 0):
-            b = len(verts)
-            verts += [(i, j, 0), (i + 1, j, 0), (i + 1, j + 1, 0), (i, j + 1, 0)]
-            faces.append((b, b + 1, b + 2, b + 3))
-            cols.append(hex_srgb(tones[int(frng.integers(3))]) + [1.0])
-    me = bpy.data.meshes.new("Terrace_Floor")
-    me.from_pydata(verts, [], faces)
-    a = me.color_attributes.new("Col", 'BYTE_COLOR', 'CORNER')
-    a.data.foreach_set("color_srgb", [c for cc in cols for c in cc * 4])
-    m = bpy.data.materials.new("TerraceFloor")
-    m.use_nodes = True
-    vc = m.node_tree.nodes.new("ShaderNodeVertexColor")
-    vc.layer_name = "Col"
-    m.node_tree.links.new(vc.outputs["Color"], m.node_tree.nodes["Principled BSDF"].inputs["Base Color"])
-    m.node_tree.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.15
-    me.materials.append(m)
-    floor = bpy.data.objects.new("Terrace_Floor", me)
-    col.objects.link(floor)
-    return objs + [floor]
+    # Пол из каменных плит: ряд швов — по передней кромке цоколя балюстрады, швы между балясинами.
+    from parts import floor as floor_part
+    fl = floor_part.build(col)[0]
+    fl.location = (0, FLOOR_Y, 0)
+    return objs + [fl]
 
 
 def setup_lighting(col):
