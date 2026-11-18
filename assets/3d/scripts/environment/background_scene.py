@@ -367,6 +367,11 @@ def build_terrace(col):
     ar = arch.build(col, span=2 * col_x)[0]
     ar.location = (0, 0, 0)
     objs += [co, c2, ar]
+    # Лоза с цветами — только на правой колонне (как на картинке), на углу, который смотрит в кадр.
+    from parts import vine
+    vr = vine.build(col, corner=0.0, name="Vine_Right")[0]
+    vr.location = (col_x, 0, 0)
+    objs.append(vr)
     # Фонари — на тумбах (как были).
     lan = lantern.build(col)[0]
     lx = mid_run / 2 + balustrade.POST_HALF
