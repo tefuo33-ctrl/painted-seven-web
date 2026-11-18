@@ -58,13 +58,15 @@ def balusters_for(run_length):
 BALUSTERS = balusters_for(RUN_LENGTH)
 
 
-def add_section(g, cx=0.0, balusters=BALUSTERS, posts=WITH_POSTS):
-    """Добавить секцию в сетку g. cx — центр секции по X. Возвращает высоту верха перил."""
+def add_section(g, cx=0.0, balusters=BALUSTERS, posts=WITH_POSTS, ext=None):
+    """Добавить секцию в сетку g. cx — центр секции по X. Возвращает высоту верха перил.
+    ext — на сколько перила и цоколь заходят за крайние балясины (например, в колонну); по умолчанию — в тумбы."""
     v = VOXEL
     run = balusters * SPACING                 # длина ряда балясин
     hd = DEPTH / 2
     x0, x1 = cx - run / 2, cx + run / 2
-    ext = POST_HALF if posts else 0.0         # перила и цоколь заходят в тумбы
+    if ext is None:
+        ext = POST_HALF if posts else 0.0     # перила и цоколь заходят в тумбы
     # Цоколь в две ступени и брус под балясинами.
     g.put(g.box(x0 - ext, x1 + ext, -hd - 0.02, hd + 0.02, 0.00, 0.06), MAT_STONE)
     g.put(g.box(x0 - ext, x1 + ext, -hd + 0.02, hd - 0.02, 0.06, 0.12), MAT_STONE)

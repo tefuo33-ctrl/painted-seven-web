@@ -42,8 +42,12 @@ from parts import bg_buildings, bg_clouds, bg_nature, bg_sailboat, bg_sea, bg_sk
 # НАСТРОЙКИ
 # ---------------------------------------------------------------------------
 INCLUDE_TERRACE = True       # для превью поставить спереди нашу балюстраду, фонари, вазоны, колонны
-COLUMN_POS = (5.8, 1.35)     # колонны (x = ±5.8): по краям кадра, за вазонами, частью за рамкой кадра —
-                             # замерено по картинке: верх капители на 0.20 высоты кадра
+# Балюстрада на превью: посередине 18 балясин между тумбами с фонарями, по бокам по 6 — до колонн
+# (колонны встают у краёв кадра на линии балюстрады, перила входят прямо в них; над ними — арка).
+MID_BALUSTERS = 18
+SIDE_BALUSTERS = 6
+TABLE_POS = (0.0, -2.3)      # покерный стол (только для вида «из-за стола»): 2.3 м перед балюстрадой
+TABLE_CAM = dict(loc=(0.0, -4.7, 1.55), hfov=56.0, pitch=-9.6)   # вид как на картинке с игроками (подогнан по сетке)
 SEED = 3
 CAMERA = (0.0, -7.75, 1.7)               # глаза игрока на террасе
 PITCH = 0.9                              # камера чуть смотрит вверх: горизонт ниже середины кадра
@@ -336,22 +340,34 @@ def build_far(col):
 
 
 def build_terrace(col):
-    """Передний план для превью: наши готовые балюстрада, фонари, вазоны (уже утверждённые детали).
-    Как на картинке: фонари на тумбах ~на четверти ширины кадра, вазоны с цветами по краям."""
-    from parts import balustrade, lantern, urn
+    """Передний план для превью: наши готовые детали, как на картинке с террасы.
+    Балюстрада: посередине MID_BALUSTERS балясин между двумя тумбами с фонарями, по бокам — участки по
+    SIDE_BALUSTERS балясин, которые без тумбы входят прямо в колонны. Колонны стоят на линии балюстрады
+    у краёв кадра, на них — одна широкая арка. Вазоны с цветами — перед колоннами."""
+    from parts import arch, balustrade, column, lantern, urn
     from voxel import Grid, hex_srgb
     sp = balustrade.SPACING
-    mid_n, side_n = 18, 4
-    mid_run, side_run = mid_n * sp, side_n * sp
     post = 2 * balustrade.POST_HALF
-    total = mid_run + 2 * side_run + 4 * post
-    g = Grid(balustrade.VOXEL, size_xy=total + 0.16, size_y=balustrade.DEPTH + 0.28, height=1.12)
-    balustrade.add_section(g, 0.0, balusters=mid_n)
+    mid_run, side_run = MID_BALUSTERS * sp, SIDE_BALUSTERS * sp
     side_cx = mid_run / 2 + post + side_run / 2
-    for s in (-1, 1):
-        balustrade.add_section(g, s * side_cx, balusters=side_n)
+    col_x = side_cx + side_run / 2 + column.SHAFT_HALF            # колонна сразу за последней балясиной
+    total = 2 * (col_x + column.BASE[0][0])
+    g = Grid(balustrade.VOXEL, size_xy=total + 0.16, size_y=balustrade.DEPTH + 0.28, height=1.12)
+    balustrade.add_section(g, 0.0, balusters=MID_BALUSTERS)                       # с тумбами под фонари
+    for s in (-1, 1):                                                             # перила заходят в колонну
+        balustrade.add_section(g, s * side_cx, balusters=SIDE_BALUSTERS, posts=False, ext=0.06)
     balustrade.decorate(g)
     objs = [g.build_mesh("Terrace_Balustrade", {balustrade.MAT_STONE: balustrade.STONE}, col)]
+    # Колонны и арка на них.
+    co = column.build(col)[0]
+    co.location = (-col_x, 0, 0)
+    c2 = co.copy()
+    col.objects.link(c2)
+    c2.location = (col_x, 0, 0)
+    ar = arch.build(col, span=2 * col_x)[0]
+    ar.location = (0, 0, 0)
+    objs += [co, c2, ar]
+    # Фонари — на тумбах (как были).
     lan = lantern.build(col)[0]
     lx = mid_run / 2 + balustrade.POST_HALF
     lan.location = (-lx, 0, 1.08)
@@ -366,21 +382,15 @@ def build_terrace(col):
         lo = bpy.data.objects.new("TerraceLanternLight", L)
         lo.location = Vector(o.location) + Vector(lantern.LIGHT_POINT)
         col.objects.link(lo)
-    ux = total / 2 + 0.45
+    # Вазоны — у колонн, перед концом балюстрады (как на картинке с террасы — у краёв кадра).
+    ux = col_x - 0.40
+    uy = -(balustrade.DEPTH / 2 + 0.04) - urn.PEDESTAL_HALF
     for o in urn.build(col):
-        o.location = (-ux, -0.1, 0)
+        o.location = (-ux, uy, 0)
         c = o.copy()
         col.objects.link(c)
-        c.location = (ux, -0.1, 0)
+        c.location = (ux, uy, 0)
         objs += [o, c]
-    # Колонны (под будущие арки) — сразу за вазонами, как на картинке.
-    from parts import column
-    co = column.build(col)[0]
-    co.location = (-COLUMN_POS[0], COLUMN_POS[1], 0)
-    c2 = co.copy()
-    col.objects.link(c2)
-    c2.location = (COLUMN_POS[0], COLUMN_POS[1], 0)
-    objs += [co, c2]
     verts, faces, cols = [], [], []
     tones = ["#b48c78", "#c49c86", "#a8826e"]
     frng = np.random.default_rng(9)
@@ -523,6 +533,16 @@ def main():
         o.hide_render = True
     render(camera(c_pre, "TownCam", lens=60, target=(220, 480, SEA_Z + 50)), os.path.join(prev, "background_town.png"), (1400, 800))
     render(camera(c_pre, "LeftCam", lens=60, target=(-430, 900, SEA_Z + 20)), os.path.join(prev, "background_left.png"), (1400, 700))
+    if INCLUDE_TERRACE:
+        # Вид «из-за стола» — как на картинке Тима с игроками: стол перед аркой, камера за спиной игрока.
+        for o in terrace:
+            o.hide_render = False
+        from parts import poker_table
+        for o in poker_table.build(c_pre):
+            o.location = (TABLE_POS[0], TABLE_POS[1], 0)
+        render(camera(c_pre, "TableCam", loc=TABLE_CAM["loc"], lens=18.0 / math.tan(math.radians(TABLE_CAM["hfov"] / 2)),
+                      pitch_deg=TABLE_CAM["pitch"]),
+               os.path.join(prev, "background_table.png"), (1448, 1086))
     ps3d.save_blend(os.path.join(ps3d.BLEND_DIR, "background.blend"))
     print("OK background")
 
