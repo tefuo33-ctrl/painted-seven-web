@@ -41,7 +41,9 @@ from parts import bg_buildings, bg_clouds, bg_nature, bg_sailboat, bg_sea, bg_sk
 # ---------------------------------------------------------------------------
 # НАСТРОЙКИ
 # ---------------------------------------------------------------------------
-INCLUDE_TERRACE = True       # для превью поставить спереди нашу балюстраду, фонари, вазоны
+INCLUDE_TERRACE = True       # для превью поставить спереди нашу балюстраду, фонари, вазоны, колонны
+COLUMN_POS = (5.8, 1.35)     # колонны (x = ±5.8): по краям кадра, за вазонами, частью за рамкой кадра —
+                             # замерено по картинке: верх капители на 0.20 высоты кадра
 SEED = 3
 CAMERA = (0.0, -7.75, 1.7)               # глаза игрока на террасе
 PITCH = 0.9                              # камера чуть смотрит вверх: горизонт ниже середины кадра
@@ -371,6 +373,14 @@ def build_terrace(col):
         col.objects.link(c)
         c.location = (ux, -0.1, 0)
         objs += [o, c]
+    # Колонны (под будущие арки) — сразу за вазонами, как на картинке.
+    from parts import column
+    co = column.build(col)[0]
+    co.location = (-COLUMN_POS[0], COLUMN_POS[1], 0)
+    c2 = co.copy()
+    col.objects.link(c2)
+    c2.location = (COLUMN_POS[0], COLUMN_POS[1], 0)
+    objs += [co, c2]
     verts, faces, cols = [], [], []
     tones = ["#b48c78", "#c49c86", "#a8826e"]
     frng = np.random.default_rng(9)
