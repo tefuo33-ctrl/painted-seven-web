@@ -48,7 +48,9 @@ MID_BALUSTERS = 18
 SIDE_BALUSTERS = 6
 FLOOR_Y = -0.20 - 7 * 0.56   # центр пола: ряд швов проходит по y = -0.20 (кромка цоколя балюстрады)
 TABLE_POS = (0.0, -2.3)      # покерный стол (только для вида «из-за стола»): 2.3 м перед балюстрадой
-TABLE_CAM = dict(loc=(0.0, -4.7, 1.55), hfov=56.0, pitch=-9.6)   # вид как на картинке с игроками (подогнан по сетке)
+CHAIR_ANGLES = (45, 135, 225, 315)   # где стулья вокруг стола (градусы от +X: 90 — со стороны моря)
+CHAIR_DIST = 1.15                    # от центра стола до середины сиденья, м (стол радиусом 0.8 + зазор)
+TABLE_CAM = dict(loc=(0.0, -5.6, 1.7), hfov=56.0, pitch=-11.0)   # вид как на картинке с игроками (подогнан по сетке)
 SEED = 3
 CAMERA = (0.0, -7.75, 1.7)               # глаза игрока на террасе
 PITCH = 0.9                              # камера чуть смотрит вверх: горизонт ниже середины кадра
@@ -525,9 +527,18 @@ def main():
         # Вид «из-за стола» — как на картинке Тима с игроками: стол перед аркой, камера за спиной игрока.
         for o in terrace:
             o.hide_render = False
-        from parts import poker_table
+        from parts import chair, poker_table
         for o in poker_table.build(c_pre):
             o.location = (TABLE_POS[0], TABLE_POS[1], 0)
+        # 4 стула вокруг стола (как на картинке): двое дальних лицом к нам, двое ближних спиной; лицом к столу.
+        ch = chair.build(c_pre)[0]
+        for i, deg in enumerate(CHAIR_ANGLES):
+            o = ch if i == 0 else ch.copy()
+            if i:
+                c_pre.objects.link(o)
+            a = math.radians(deg)
+            o.location = (TABLE_POS[0] + CHAIR_DIST * math.cos(a), TABLE_POS[1] + CHAIR_DIST * math.sin(a), 0)
+            o.rotation_euler = (0, 0, a - math.pi / 2)
         render(camera(c_pre, "TableCam", loc=TABLE_CAM["loc"], lens=18.0 / math.tan(math.radians(TABLE_CAM["hfov"] / 2)),
                       pitch_deg=TABLE_CAM["pitch"]),
                os.path.join(prev, "background_table.png"), (1448, 1086))
