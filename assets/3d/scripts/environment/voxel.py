@@ -29,7 +29,8 @@ class Palette:
     """Палитра материала: оттенки от самого тёмного к самому светлому.
     base — индекс «обычного» оттенка; roughness — блеск в игре."""
 
-    def __init__(self, name, colors, base, roughness=0.6, metallic=0.0, emission=None, emission_strength=0.0):
+    def __init__(self, name, colors, base, roughness=0.6, metallic=0.0, emission=None, emission_strength=0.0,
+                 specular=None):
         """emission — '#RRGGBB' свечения (стекло фонаря, огонь); emission_strength — яркость.
         В .glb свечение одно на материал (так устроен формат), узор даёт цвет вершин."""
         self.name = name
@@ -39,6 +40,7 @@ class Palette:
         self.metallic = metallic
         self.emission = emission
         self.emission_strength = emission_strength
+        self.specular = specular          # сила отражений (None — как обычно); воде — поменьше
 
 
 class Grid:
@@ -254,6 +256,8 @@ def voxel_material(pal):
     nt.links.new(attr.outputs["Color"], bsdf.inputs["Base Color"])
     bsdf.inputs["Roughness"].default_value = pal.roughness
     bsdf.inputs["Metallic"].default_value = pal.metallic
+    if pal.specular is not None:
+        bsdf.inputs["Specular IOR Level"].default_value = pal.specular
     if pal.emission:
         lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in hex_srgb(pal.emission)]
         bsdf.inputs["Emission Color"].default_value = lin + [1.0]
