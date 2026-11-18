@@ -1,5 +1,7 @@
-// Атлас карт: все 36 лиц, рубашка, торец и значки мастей нарисованы кодом
-// на одной текстуре. Одна текстура на все карты — быстро на телефоне.
+// Атлас карт: все 36 лиц, рубашка, торец и значки мастей на одной текстуре.
+// Одна текстура на все карты — быстро на телефоне.
+// Основной вариант — пиксельный атлас из 3D-сессии (public/cards/cards.png, ячейка 128×192,
+// та же раскладка 10×5). Если картинка не загрузилась, карты рисуются кодом, как раньше.
 
 import * as THREE from 'three';
 import { type Card, type Rank, type Suit, RANKS, SUITS, isJoker } from '../engine';
@@ -309,7 +311,36 @@ function drawBack(ctx: CanvasRenderingContext2D): void {
   }
 }
 
-let atlas: THREE.CanvasTexture | null = null;
+let atlas: THREE.Texture | null = null;
+
+/** Пиксельный атлас карт (null — не загружен, тогда карты рисуются кодом). */
+let sheet: HTMLImageElement | null = null;
+const SHEET_URL = `${import.meta.env.BASE_URL}cards/cards.png`;
+
+/** Загрузить пиксельный атлас. Вызывать до первой карты на столе; ошибка не страшна. */
+export async function loadCardSheet(): Promise<void> {
+  try {
+    // Ждём событие load (а не decode(): в фоновой вкладке decode может не завершиться),
+    // но не дольше 8 секунд — иначе игра стартует с картами, нарисованными кодом.
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('Атлас карт грузится слишком долго')), 8000);
+      image.onload = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      image.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error('Атлас карт не найден'));
+      };
+      image.src = SHEET_URL;
+    });
+    if (image.naturalWidth % COLS !== 0 || image.naturalHeight % ROWS !== 0) throw new Error('Неверный размер атласа');
+    sheet = image;
+  } catch (error) {
+    console.warn('Атлас карт не загрузился — рисуем карты кодом', error);
+  }
+}
 
 function paintAtlas(ctx: CanvasRenderingContext2D): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -341,8 +372,19 @@ function paintAtlas(ctx: CanvasRenderingContext2D): void {
 }
 
 /** Текстура со всеми картами (создаётся один раз). */
-export function getCardAtlas(): THREE.CanvasTexture {
+export function getCardAtlas(): THREE.Texture {
   if (atlas) return atlas;
+  if (sheet) {
+    // Пиксель-арт: без сглаживания и без мип-уровней — пиксели остаются чёткими.
+    const texture = new THREE.Texture(sheet);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    atlas = texture;
+    return texture;
+  }
   const texture = paintedTexture(CELL_W * COLS * ATLAS_SCALE, CELL_H * ROWS * ATLAS_SCALE, (ctx) => paintAtlas(ctx));
   texture.anisotropy = 8;
   atlas = texture;
@@ -351,7 +393,7 @@ export function getCardAtlas(): THREE.CanvasTexture {
 
 /** Перерисовать карты (после смены языка меняются буквы рангов). */
 export function repaintCardAtlas(): void {
-  if (!atlas) return;
+  if (!atlas || sheet) return; // в пиксельном атласе буквы нарисованы, перерисовывать нечего
   const canvas = atlas.image as HTMLCanvasElement;
   paintAtlas(canvas.getContext('2d')!);
   atlas.needsUpdate = true;
@@ -364,6 +406,20 @@ const imageCache = new Map<string, string>();
 export function cardImage(card: Card): string {
   const key = `${card.suit}:${card.rank}`;
   let url = imageCache.get(key);
+  if (!url && sheet) {
+    // Вырезаем ячейку из пиксельного атласа, без сглаживания.
+    const w = sheet.naturalWidth / COLS;
+    const h = sheet.naturalHeight / ROWS;
+    const cell = cardCell(card);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(sheet, (cell % COLS) * w, Math.floor(cell / COLS) * h, w, h, 0, 0, w, h);
+    url = canvas.toDataURL('image/png');
+    imageCache.set(key, url);
+  }
   if (!url) {
     const canvas = document.createElement('canvas');
     canvas.width = CELL_W * 3;

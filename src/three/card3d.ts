@@ -32,18 +32,23 @@ let materials: Record<Look, THREE.MeshLambertMaterial> | null = null;
 function getMaterials(): Record<Look, THREE.MeshLambertMaterial> {
   if (!materials) {
     const map = getCardAtlas();
+    // Прозрачные скруглённые углы карты (альфа-канал атласа) не рисуем.
+    const cut = (material: THREE.MeshLambertMaterial) => {
+      material.alphaTest = 0.5;
+      return material;
+    };
     materials = {
       // Бумага чуть приглушена, чтобы под фонарём карты не «выгорали» в белое.
-      normal: retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0xc8c4bc })),
+      normal: cut(retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0xc8c4bc }))),
       // Затемнённая карта: ею сейчас ходить нельзя.
-      dim: retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0x5a5866 })),
+      dim: cut(retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0x5a5866 }))),
       // Подсвеченная карта: ею можно ходить.
-      lit: retro(
-        new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x4a3818, emissiveMap: map, color: 0xd8d4cc }),
+      lit: cut(
+        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x4a3818, emissiveMap: map, color: 0xd8d4cc })),
       ),
       // Выбранная карта: светится ярче остальных.
-      chosen: retro(
-        new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x7a5c20, emissiveMap: map, color: 0xd8d4cc }),
+      chosen: cut(
+        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x7a5c20, emissiveMap: map, color: 0xd8d4cc })),
       ),
     };
   }

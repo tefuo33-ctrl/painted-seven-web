@@ -2,6 +2,7 @@
 
 import './ui/style.css';
 import { getLanguage, loadLanguage } from './i18n';
+import { loadCardSheet } from './three/cardAtlas';
 import { loadGfx } from './three/gfx';
 import { createStage } from './three/stage';
 import { startApp } from './ui/app';
@@ -18,7 +19,10 @@ loadGfx();
 loadLanguage();
 document.documentElement.lang = getLanguage();
 
+// Сначала загружаем атлас карт (картинку), потом строим сцену: карты сразу с нужной текстурой.
 if (stageRoot && root) {
-  const stage = createStage(stageRoot);
-  startApp(root, stage);
+  void loadCardSheet().then(() => {
+    const stage = createStage(stageRoot);
+    startApp(root, stage);
+  });
 }
