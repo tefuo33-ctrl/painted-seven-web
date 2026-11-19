@@ -24,8 +24,9 @@ import ps3d  # noqa: E402
 
 OUT = os.path.join(ps3d.ASSETS, "export", "cards")
 PREV = os.path.join(ps3d.ASSETS, "previews", "cards")
-CARD_W, CARD_H, CARD_T = 0.064, 0.096, 0.0006     # 1 пиксель ячейки = 0.5 мм; толщина 0.6 мм
-CORNER = 7 * 0.0005                                # скругление угла — как на рисунке (7 пикселей)
+CARD_SCALE = 1.2                                   # карты на 20% крупнее обычных — видно и с другого конца стола
+CARD_W, CARD_H, CARD_T = 0.064 * CARD_SCALE, 0.096 * CARD_SCALE, 0.0006     # 76.8 × 115.2 мм, толщина 0.6 мм
+CORNER = 7 * 0.0005 * CARD_SCALE                   # скругление угла — как на рисунке (7 пикселей)
 
 
 def save_png(a, path, scale=1):

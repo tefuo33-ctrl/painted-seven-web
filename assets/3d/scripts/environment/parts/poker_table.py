@@ -15,7 +15,8 @@ from voxel import Grid, Palette
 # ---------------------------------------------------------------------------
 # НАСТРОЙКИ
 # ---------------------------------------------------------------------------
-VOXEL = 0.02          # размер кубика, м (меньше — детальнее, но тяжелее)
+VOXEL = 0.01          # размер кубика, м (1 см — круг ровнее, пиксели мельче и однороднее, под стиль карт)
+U = 0.02              # шаг деталей (размеры борта, юбки, ножки — как раньше, в «старых» кубиках 2 см)
 RADIUS = 0.80         # радиус стола по борту, м
 HEIGHT = 0.76         # высота стола (верх борта), м
 RAIL_WIDTH = 0.105    # ширина деревянного борта, м (было 0.14, уменьшено на 25%)
@@ -36,24 +37,21 @@ MAT_WOOD, MAT_DARK, MAT_FELT = 1, 2, 3
 
 
 def make_grid():
-    g = Grid(VOXEL, size_xy=2 * RADIUS + 4 * VOXEL, height=HEIGHT + 2 * VOXEL)
-    v = VOXEL
+    g = Grid(VOXEL, size_xy=2 * RADIUS + 4 * U, height=HEIGHT + 2 * U)
+    v = U                                  # дальше размеры — в шагах по 2 см, кубики при этом 1 см
     top = HEIGHT
     inner = RADIUS - RAIL_WIDTH            # где кончается борт и начинается сукно
     felt_top = top - 2 * v
 
-    # --- Борт (как на референсе): широкий плоский верх, ровная внешняя стенка в 2 кубика,
-    #     скругление только на рёбрах, снизу — тёмный паз.
-    rail = [
-        (inner + v, RADIUS - v),       # верх: ребро скруглено на 1 кубик
-        (inner, RADIUS),               # внешняя стенка
-        (inner, RADIUS),
-        (inner, RADIUS - v),           # нижнее скругление
-    ]
-    for i, (r0, r1) in enumerate(rail):
-        z1 = top - i * v
-        g.put(g.ring(r0, r1, z1 - v, z1), MAT_WOOD)
-    z = top - len(rail) * v
+    # --- Борт: плавно скруглённый «валик» (профиль считается для каждого слоя в 1 см),
+    #     снизу — тёмный паз.
+    rail_h = 4 * v
+    nl = int(round(rail_h / VOXEL))
+    for k in range(nl):                    # ровная стенка, фаска в 1 кубик только сверху и снизу
+        inset = VOXEL if k in (0, nl - 1) else 0.0
+        g.put(g.ring(inner + (VOXEL if k == 0 else 0.0), RADIUS - inset, top - (k + 1) * VOXEL, top - k * VOXEL),
+              MAT_WOOD)
+    z = top - rail_h
 
     # --- Сукно и основа под ним.
     g.put(g.disk(inner, felt_top - 2 * v, felt_top), MAT_FELT)
@@ -73,7 +71,7 @@ def make_grid():
     g.put(g.square(half, col_bottom, col_top, chamfer=0.35), MAT_DARK)
     # Пазы: на внешнем слое колонны вырезаем каждый N-й ряд кубиков.
     shell = (np.maximum(np.abs(g.X), np.abs(g.Y)) > half - v) & g.zs(col_bottom + 2 * v, col_top - v)
-    along = np.where(np.abs(g.X) > np.abs(g.Y), g.SJ, g.SI)       # номер кубика от середины грани
+    along = np.where(np.abs(g.X) > np.abs(g.Y), g.SJ, g.SI) // 2  # номер «старого» кубика 2 см от середины грани
     g.cut(shell & (along % FLUTES_EVERY == 1))
     g.put(g.square(half + 2 * v, col_bottom - 2 * v, col_bottom, chamfer=0.4), MAT_DARK)
     # --- Низ: квадратный блок, крестовина из 4 лап (ступенькой), круглое основание в 3 ступени.
@@ -89,19 +87,14 @@ def make_grid():
     seam = np.abs(((g.A + np.pi) / (2 * np.pi) * PLANKS) - np.round((g.A + np.pi) / (2 * np.pi) * PLANKS)) * \
         (2 * np.pi * g.R / PLANKS) < v * 0.6
     is_wood = g.mat == MAT_WOOD
-    g.tint(is_wood & (plank % 3 == 1), -1)                 # доски чуть разного тона
-    g.tint(is_wood & (plank % 5 == 2), +1)
+    # Однородно, без пёстрого шума (как просил Тим): только тонкие швы между досками и тень снизу.
     g.tint(is_wood & seam, -1)                             # швы между досками
-    g.tint(is_wood & (g.Z < top - 2 * v), -1)              # нижняя часть стенки борта темнее
-    g.noise(MAT_WOOD, 0.08, 0.05, seed=3)
-    # Тёмное дерево: волокна — горизонтальные полоски по слоям, на колонне — вертикальные доски.
+    g.tint(is_wood & (g.Z < top - 2.5 * v), -1)            # нижняя часть валика темнее
+    # Тёмное дерево: редкие горизонтальные полоски на юбке, вертикальные доски на колонне.
     is_dark = g.mat == MAT_DARK
-    g.tint(is_dark & (g.K % 3 == 0) & (g.Z > under - 6 * v), -1)
-    g.tint(is_dark & (((g.SI + g.SJ) // 3) % 4 == 0) & (g.Z < under - 6 * v), -1)
-    g.noise(MAT_DARK, 0.06, 0.04, seed=4)
-    # Сукно: лёгкий ворс и чуть светлее в середине (свет лампы игры добавит остальное).
-    g.noise(MAT_FELT, 0.12, 0.08, seed=5)
-    g.tint((g.mat == MAT_FELT) & (g.R < inner * 0.55), +1)
+    g.tint(is_dark & ((g.K // 2) % 4 == 0) & (g.Z > under - 6 * v), -1)
+    g.tint(is_dark & (((g.SI + g.SJ) // 6) % 4 == 0) & (g.Z < under - 6 * v), -1)
+    # Сукно: ровное, однотонное (свет лампы игры даст пятно света сам).
     return g
 
 
