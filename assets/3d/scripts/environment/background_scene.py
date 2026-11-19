@@ -514,6 +514,35 @@ def main():
                           "Vox_BgFoam — пена прибоя",
         "sky_sunset": bg_sky.SKY_SUNSET,
     }
+    # --- Для игры: небо (облегчённый купол) и передний план террасы — те же, что на картинке с закатом.
+    game_sky = bg_sky.make_sky_dome(c_sky, CAMERA, sun_dir=tuple(sun_dir), frame=(PITCH, HFOV, ASPECT),
+                                    segments=160, rings=80)
+    game_sky.name = "Sky"
+    layout["elements"].append({"name": "sky", "file": export([game_sky], "bg_sky"), "static": True,
+                               "note": "купол неба вокруг глаз игрока (CAMERA), радиус 7000 м; цвет в вершинах, "
+                                       "без освещения (MeshBasicMaterial + vertexColors), не отбрасывает тень"})
+    bpy.data.objects.remove(game_sky)
+    if terrace:
+        from parts import balustrade, lantern
+        lx = MID_BALUSTERS * balustrade.SPACING / 2 + balustrade.POST_HALF
+        layout["elements"].append({
+            "name": "terrace", "file": export(terrace, "terrace"), "static": True,
+            "note": "передний план: балюстрада с тумбами, колонны с аркой, лоза, фонари, вазоны, пол из плит; "
+                    "пол z=0, балюстрада по y=0, море в сторону +y",
+            "lantern_lights": [{"position": (s * lx + lantern.LIGHT_POINT[0], lantern.LIGHT_POINT[1],
+                                             1.08 + lantern.LIGHT_POINT[2]), "color": lantern.LIGHT_COLOR}
+                               for s in (-1, 1)]})
+    layout["table"] = {"position": (TABLE_POS[0], TABLE_POS[1], 0.0), "file": "environment/poker_table.glb",
+                       "felt_z": 0.72}
+    layout["chairs"] = {"file": "environment/chair.glb",
+                        "places": [{"position": (TABLE_POS[0] + CHAIR_DIST * math.cos(math.radians(d)),
+                                                 TABLE_POS[1] + CHAIR_DIST * math.sin(math.radians(d)), 0.0),
+                                    "rotation_z_deg": d - 90} for d in CHAIR_ANGLES]}
+    layout["lighting_sunset"] = {"sun_position": SUN_POS, "sun_color": tuple(raspberry(LIGHT["sun_color"])),
+                                 "sun_energy": LIGHT["sun_energy"],
+                                 "ambient": "#%02x%02x%02x" % tuple(int(round(v * 255)) for v in
+                                                                    raspberry(hex_srgb(LIGHT["ambient"]))),
+                                 "ambient_strength": LIGHT["ambient_strength"]}
     with open(os.path.join(OUT, "layout.json"), "w", encoding="utf-8") as f:
         json.dump(layout, f, ensure_ascii=False, indent=2)
 

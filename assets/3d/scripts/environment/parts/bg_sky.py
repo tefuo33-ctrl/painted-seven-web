@@ -45,11 +45,11 @@ def load_sky_ref(path=SKY_REF):
     return np.array(im.pixels[:], dtype=np.float32).reshape(h, w, 4)[::-1, :, :3]   # верхняя строка первой
 
 
-def make_sky_dome(col, center, radius=7000.0, sun_dir=(0.0, 1.0, 0.0), frame=None):
+def make_sky_dome(col, center, radius=7000.0, sun_dir=(0.0, 1.0, 0.0), frame=None, segments=512, rings=256):
     """Купол неба (только превью). Цвет по высоте + сияние вокруг солнца.
     frame = (pitch°, hfov°, aspect) камеры террасы: тогда в кадре небо берётся с картинки Тима
     (source/sky_ref.png — небо без облаков), а за кадром плавно переходит в градиент SKY_SUNSET."""
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=512, ring_count=256, radius=radius, location=center)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=radius, location=center)
     obj = bpy.context.object
     obj.name = "PreviewSky"
     obj.visible_shadow = False          # купол не должен отбрасывать тень (иначе солнце не светит)

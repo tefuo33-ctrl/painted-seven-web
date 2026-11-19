@@ -157,6 +157,36 @@
       ],
       "scale": 3.8,
       "forward": "+X"
+    },
+    {
+      "name": "sky",
+      "file": "background/bg_sky.glb",
+      "static": true,
+      "note": "купол неба вокруг глаз игрока (CAMERA), радиус 7000 м; цвет в вершинах, без освещения (MeshBasicMaterial + vertexColors), не отбрасывает тень"
+    },
+    {
+      "name": "terrace",
+      "file": "background/terrace.glb",
+      "static": true,
+      "note": "передний план: балюстрада с тумбами, колонны с аркой, лоза, фонари, вазоны, пол из плит; пол z=0, балюстрада по y=0, море в сторону +y",
+      "lantern_lights": [
+        {
+          "position": [
+            -2.7400000000000007,
+            0.0,
+            1.35
+          ],
+          "color": "#ffb35a"
+        },
+        {
+          "position": [
+            2.7400000000000007,
+            0.0,
+            1.35
+          ],
+          "color": "#ffb35a"
+        }
+      ]
     }
   ],
   "materials_note": "Vox_BgWindow — окна (днём выключать), Vox_SeaGlint — солнечная дорожка, Vox_BgFoam — пена прибоя",
@@ -201,5 +231,66 @@
       90,
       "#262044"
     ]
-  ]
+  ],
+  "table": {
+    "position": [
+      0.0,
+      -2.3,
+      0.0
+    ],
+    "file": "environment/poker_table.glb",
+    "felt_z": 0.72
+  },
+  "chairs": {
+    "file": "environment/chair.glb",
+    "places": [
+      {
+        "position": [
+          0.8131727983645296,
+          -1.4868272016354702,
+          0.0
+        ],
+        "rotation_z_deg": -45
+      },
+      {
+        "position": [
+          -0.8131727983645295,
+          -1.4868272016354702,
+          0.0
+        ],
+        "rotation_z_deg": 45
+      },
+      {
+        "position": [
+          -0.8131727983645298,
+          -3.113172798364529,
+          0.0
+        ],
+        "rotation_z_deg": 135
+      },
+      {
+        "position": [
+          0.8131727983645294,
+          -3.1131727983645296,
+          0.0
+        ],
+        "rotation_z_deg": 225
+      }
+    ]
+  },
+  "lighting_sunset": {
+    "sun_position": [
+      0.0,
+      3500.0,
+      65.5
+    ],
+    "sun_color": [
+      0.99,
+      0.5475,
+      0.25875000000000004
+    ],
+    "sun_energy": 5.0,
+    "ambient": "#8a2c44",
+    "ambient_strength": 1.5
+  }
 }
