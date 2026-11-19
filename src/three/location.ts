@@ -2,12 +2,16 @@
 // Море, небо и город — неподвижный фон с несколькими планами глубины; анимируется только пламя фонарей.
 
 import * as THREE from 'three';
-import { PALETTE, glow, paintedTexture, seededRandom, smooth } from './gfx';
-import { FLOOR_Y } from './table';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { glow, paintedTexture, seededRandom, smooth } from './gfx';
+import { FLOOR_Y, TABLE_RADIUS } from './table';
 
 const SEA_Y = -11;
 const EDGE_Z = -13; // край террасы с балюстрадой
 const CEILING_Y = 12.5;
+/** Яркость света под люстрой и у свечей (подобрана так, чтобы сукно было светлым, как на превью). */
+const MAIN_LIGHT = 40;
+const CANDLE_LIGHT = 3;
 const SKY_Z = -260;
 
 export interface Location {
@@ -694,21 +698,70 @@ export function buildLocation(scene: THREE.Scene): Location {
     group.add(bracket);
   }
 
-  // Большой кованый фонарь над столом — главный источник света.
+  // Над столом — воксельная люстра из 3D-сессии (public/models/chandelier_voxel.glb).
+  // Пока она грузится (или если не загрузилась), висит прежний кованый фонарь.
+  const fallback = new THREE.Group();
   const main = buildLamp(1.5);
   const lanternY = 7.9;
   main.lamp.position.set(0, lanternY, -1.2);
-  group.add(main.lamp);
+  fallback.add(main.lamp);
   flames.push(main.flame);
   for (let y = lanternY + 2.0; y < CEILING_Y; y += 0.42) {
     const link = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.035, 6, 10), smooth(0x1c1612, 30));
     link.position.set(0, y, -1.2);
     link.rotation.y = (Math.round(y / 0.42) % 2) * (Math.PI / 2);
-    group.add(link);
+    fallback.add(link);
   }
-  const light = new THREE.PointLight(PALETTE.lantern, 1, 60, 1.1);
-  light.position.set(0, lanternY - 0.8, -1.2);
+  group.add(fallback);
+
+  // Люстра в метрах: точка крепления — начало координат, висит вниз на 0.80 м.
+  // Масштаб — как у стола (TABLE_RADIUS / 0.80 м); крепление на 1.6 м выше сукна, низ — на 0.8 м.
+  const metre = TABLE_RADIUS / 0.8;
+  const attachY = 1.6 * metre;
+  const chandelier = new THREE.Group();
+  chandelier.position.set(0, attachY, 0);
+  group.add(chandelier);
+  new GLTFLoader().load(
+    `${import.meta.env.BASE_URL}models/chandelier_voxel.glb`,
+    (gltf) => {
+      gltf.scene.scale.setScalar(metre);
+      gltf.scene.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = false; // тень люстры легла бы пятном на сукно
+        mesh.receiveShadow = false;
+      });
+      chandelier.add(gltf.scene);
+      // Цепь от крепления люстры до потолка.
+      for (let y = attachY + 0.21; y < CEILING_Y; y += 0.42) {
+        const link = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.035, 6, 10), smooth(0x3a2a16, 30));
+        link.position.set(0, y, 0);
+        link.rotation.y = (Math.round(y / 0.42) % 2) * (Math.PI / 2);
+        group.add(link);
+      }
+      group.remove(fallback);
+      flames.splice(flames.indexOf(main.flame), 1);
+    },
+    undefined,
+    (error) => console.warn('Люстра не загрузилась — остаётся фонарь', error),
+  );
+
+  // Главный свет — тёплая точка прямо под люстрой, на 0.86 м ниже крепления: он освещает сукно.
+  const light = new THREE.PointLight(0xffb35a, 1, 70, 1.1);
+  light.position.set(0, attachY - 0.86 * metre, 0);
   group.add(light);
+  // Слабые огоньки у шести свечей (только на компьютере: на телефоне каждый свет заметно греет).
+  const candles: THREE.PointLight[] = [];
+  if (!window.matchMedia('(pointer: coarse)').matches) {
+    for (const degrees of [30, 90, 150, 210, 270, 330]) {
+      const angle = THREE.MathUtils.degToRad(degrees);
+      const candle = new THREE.PointLight(0xffc070, 1, 18, 1.6);
+      candle.position.set(Math.cos(angle) * 0.3 * metre, attachY - 0.375 * metre, Math.sin(angle) * 0.3 * metre);
+      candle.castShadow = false;
+      candles.push(candle);
+      group.add(candle);
+    }
+  }
 
   // Свет: тёплое небо сверху и закат со стороны моря. Главный свет с тенями — в stage.ts.
   group.add(new THREE.HemisphereLight(0xffd0b8, 0x4a3a58, 1.25));
@@ -735,7 +788,10 @@ export function buildLocation(scene: THREE.Scene): Location {
     update(time) {
       // Мерцание пламени: несколько волн разной частоты.
       const flicker = 1 + Math.sin(time * 9.1) * 0.04 + Math.sin(time * 23.7) * 0.03 + Math.sin(time * 3.3) * 0.05;
-      light.intensity = 17 * flicker;
+      light.intensity = MAIN_LIGHT * flicker;
+      candles.forEach((candle, i) => {
+        candle.intensity = CANDLE_LIGHT * (1 + Math.sin(time * (7 + i) + i) * 0.1);
+      });
       flames.forEach((flame, i) => {
         const own = 1 + Math.sin(time * (8 + i) + i * 2) * 0.08;
         flame.scale.set(own, 1.4 * own * flicker, own);
