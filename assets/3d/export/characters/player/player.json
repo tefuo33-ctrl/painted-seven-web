@@ -1,0 +1,342 @@
+{
+  "units": "метры; пол z = 0 (glTF: Y вверх), персонаж смотрит на -Y (в glTF — на +Z)",
+  "voxel": 0.02,
+  "bodies": {
+    "male": {
+      "pelvis": {
+        "pivot": [
+          0,
+          0,
+          0.64
+        ],
+        "parent": null
+      },
+      "torso": {
+        "pivot": [
+          0,
+          0,
+          0.7
+        ],
+        "parent": "pelvis"
+      },
+      "head": {
+        "pivot": [
+          0,
+          0,
+          1.22
+        ],
+        "parent": "torso"
+      },
+      "upperarm_R": {
+        "pivot": [
+          -0.215,
+          0,
+          1.17
+        ],
+        "parent": "torso"
+      },
+      "forearm_R": {
+        "pivot": [
+          -0.235,
+          0,
+          0.95
+        ],
+        "parent": "upperarm_R"
+      },
+      "hand_R": {
+        "pivot": [
+          -0.24,
+          -0.012,
+          0.755
+        ],
+        "parent": "forearm_R"
+      },
+      "thigh_R": {
+        "pivot": [
+          -0.09,
+          0,
+          0.64
+        ],
+        "parent": "pelvis"
+      },
+      "shin_R": {
+        "pivot": [
+          -0.09,
+          0,
+          0.37
+        ],
+        "parent": "thigh_R"
+      },
+      "foot_R": {
+        "pivot": [
+          -0.09,
+          0,
+          0.09
+        ],
+        "parent": "shin_R"
+      },
+      "upperarm_L": {
+        "pivot": [
+          0.215,
+          0,
+          1.17
+        ],
+        "parent": "torso"
+      },
+      "forearm_L": {
+        "pivot": [
+          0.235,
+          0,
+          0.95
+        ],
+        "parent": "upperarm_L"
+      },
+      "hand_L": {
+        "pivot": [
+          0.24,
+          -0.012,
+          0.755
+        ],
+        "parent": "forearm_L"
+      },
+      "thigh_L": {
+        "pivot": [
+          0.09,
+          0,
+          0.64
+        ],
+        "parent": "pelvis"
+      },
+      "shin_L": {
+        "pivot": [
+          0.09,
+          0,
+          0.37
+        ],
+        "parent": "thigh_L"
+      },
+      "foot_L": {
+        "pivot": [
+          0.09,
+          0,
+          0.09
+        ],
+        "parent": "shin_L"
+      }
+    },
+    "female": {
+      "pelvis": {
+        "pivot": [
+          0,
+          0,
+          0.64
+        ],
+        "parent": null
+      },
+      "torso": {
+        "pivot": [
+          0,
+          0,
+          0.7
+        ],
+        "parent": "pelvis"
+      },
+      "head": {
+        "pivot": [
+          0,
+          0,
+          1.22
+        ],
+        "parent": "torso"
+      },
+      "upperarm_R": {
+        "pivot": [
+          -0.172,
+          0,
+          1.17
+        ],
+        "parent": "torso"
+      },
+      "forearm_R": {
+        "pivot": [
+          -0.207,
+          0,
+          0.95
+        ],
+        "parent": "upperarm_R"
+      },
+      "hand_R": {
+        "pivot": [
+          -0.212,
+          -0.012,
+          0.755
+        ],
+        "parent": "forearm_R"
+      },
+      "thigh_R": {
+        "pivot": [
+          -0.065,
+          0,
+          0.64
+        ],
+        "parent": "pelvis"
+      },
+      "shin_R": {
+        "pivot": [
+          -0.065,
+          0,
+          0.37
+        ],
+        "parent": "thigh_R"
+      },
+      "foot_R": {
+        "pivot": [
+          -0.065,
+          0,
+          0.09
+        ],
+        "parent": "shin_R"
+      },
+      "upperarm_L": {
+        "pivot": [
+          0.172,
+          0,
+          1.17
+        ],
+        "parent": "torso"
+      },
+      "forearm_L": {
+        "pivot": [
+          0.207,
+          0,
+          0.95
+        ],
+        "parent": "upperarm_L"
+      },
+      "hand_L": {
+        "pivot": [
+          0.212,
+          -0.012,
+          0.755
+        ],
+        "parent": "forearm_L"
+      },
+      "thigh_L": {
+        "pivot": [
+          0.065,
+          0,
+          0.64
+        ],
+        "parent": "pelvis"
+      },
+      "shin_L": {
+        "pivot": [
+          0.065,
+          0,
+          0.37
+        ],
+        "parent": "thigh_L"
+      },
+      "foot_L": {
+        "pivot": [
+          0.065,
+          0,
+          0.09
+        ],
+        "parent": "shin_L"
+      }
+    }
+  },
+  "outfits": {
+    "cream_double": "male",
+    "navy_pinstripe": "male",
+    "black_suit": "male",
+    "beige_vest": "male",
+    "black_skirt": "female",
+    "black_skirt_red": "female"
+  },
+  "attach": {
+    "hair": "head",
+    "glasses": "head"
+  },
+  "hairstyles": [
+    "pompadour",
+    "slick",
+    "wavy_long",
+    "bun"
+  ],
+  "glasses": [
+    "square",
+    "none"
+  ],
+  "poses": {
+    "stand": {
+      "rot_deg": {},
+      "offset": [
+        0,
+        0,
+        0
+      ]
+    },
+    "sit": {
+      "rot_deg": {
+        "thigh_R": [
+          -90,
+          0,
+          0
+        ],
+        "thigh_L": [
+          -90,
+          0,
+          0
+        ],
+        "shin_R": [
+          90,
+          0,
+          0
+        ],
+        "shin_L": [
+          90,
+          0,
+          0
+        ],
+        "upperarm_R": [
+          -35,
+          0,
+          6
+        ],
+        "upperarm_L": [
+          -35,
+          0,
+          -6
+        ],
+        "forearm_R": [
+          -55,
+          0,
+          0
+        ],
+        "forearm_L": [
+          -55,
+          0,
+          0
+        ],
+        "torso": [
+          -3,
+          0,
+          0
+        ],
+        "head": [
+          4,
+          0,
+          0
+        ]
+      },
+      "offset": [
+        0,
+        0,
+        -0.08
+      ]
+    }
+  },
+  "note": "позу задают поворотами частей вокруг их шарниров (начало координат каждой части — в шарнире)"
+}
