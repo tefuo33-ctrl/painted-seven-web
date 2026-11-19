@@ -2,10 +2,21 @@
 // Сукно лежит на высоте y = 0, пол террасы — на FLOOR_Y.
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PALETTE, hex, paintedTexture, smooth } from './gfx';
 
-export const FELT_RADIUS = 4.8;
+/** Радиус сукна до внутренней стенки борта (что ближе к краю — уже на борту). */
+export const FELT_RADIUS = 5.0;
 export const TABLE_RADIUS = 5.85;
+
+/**
+ * Воксельный стол из 3D-сессии (assets/3d/export/environment/poker_table.glb, копия в public/models/).
+ * Он в метрах: радиус по борту 0.80, сукно на высоте 0.72. В игре стол того же размера, что и прежний:
+ * борт — на радиусе TABLE_RADIUS, сукно — на высоте 0. Ножки уходят чуть ниже пола террасы — их не видно.
+ */
+const TABLE_MODEL_URL = `${import.meta.env.BASE_URL}models/poker_table.glb`;
+const MODEL_RIM_RADIUS = 0.8;
+const MODEL_FELT_HEIGHT = 0.72;
 export const FLOOR_Y = -4.2;
 /** Расстояние от центра стола до кресла. */
 export const SEAT_DISTANCE = 8.0;
@@ -21,7 +32,38 @@ function turned(profile: [number, number][], material: THREE.Material, segments 
   return mesh;
 }
 
+/**
+ * Стол. Сразу ставится нарисованный кодом (чтобы сцена не была пустой), а когда загрузится
+ * воксельная модель — она его заменяет. Если модель не загрузилась, остаётся прежний стол.
+ */
 export function buildTable(): THREE.Group {
+  const group = new THREE.Group();
+  const fallback = buildProceduralTable();
+  group.add(fallback);
+  new GLTFLoader().load(
+    TABLE_MODEL_URL,
+    (gltf) => {
+      const model = gltf.scene;
+      const scale = TABLE_RADIUS / MODEL_RIM_RADIUS;
+      model.scale.setScalar(scale);
+      model.position.y = -MODEL_FELT_HEIGHT * scale;
+      model.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      });
+      group.remove(fallback);
+      group.add(model);
+    },
+    undefined,
+    (error) => console.warn('Модель стола не загрузилась — остаётся прежний стол', error),
+  );
+  return group;
+}
+
+/** Прежний стол, собранный кодом: запасной вариант. */
+function buildProceduralTable(): THREE.Group {
   const group = new THREE.Group();
 
   // Сукно: мягкая ткань с ворсом, светлее к центру (свет фонаря), золотая линия-разметка.
@@ -50,7 +92,7 @@ export function buildTable(): THREE.Group {
     ctx.stroke();
   });
   const felt = new THREE.Mesh(
-    new THREE.CircleGeometry(FELT_RADIUS + 0.05, SEGMENTS),
+    new THREE.CircleGeometry(4.85, SEGMENTS),
     new THREE.MeshLambertMaterial({ map: feltTexture }),
   );
   felt.rotation.x = -Math.PI / 2;
@@ -60,7 +102,7 @@ export function buildTable(): THREE.Group {
   // Золотая окантовка сукна, мягкий кожаный борт, царга из полированного дерева.
   const wood = smooth(0x4a2a18, 40);
   const darkWood = smooth(0x321c10, 40);
-  group.add(turned([[FELT_RADIUS, 0.0], [FELT_RADIUS + 0.04, 0.035], [5.0, 0.035]], smooth(PALETTE.goldDark, 60)));
+  group.add(turned([[4.8, 0.0], [4.84, 0.035], [5.0, 0.035]], smooth(PALETTE.goldDark, 60)));
   group.add(
     turned(
       [[5.0, 0.035], [5.01, 0.2], [5.1, 0.33], [5.3, 0.4], [5.55, 0.37], [5.75, 0.24], [TABLE_RADIUS, 0.05]],

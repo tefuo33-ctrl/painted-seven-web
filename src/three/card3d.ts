@@ -5,9 +5,11 @@ import { type Card } from '../engine';
 import { CELL_BACK, CELL_EDGE, cardCell, cellUv, getCardAtlas } from './cardAtlas';
 import { retro } from './gfx';
 
-export const CARD_W = 1;
-export const CARD_H = 1.5;
-export const CARD_T = 0.03;
+/** Карты на 20% крупнее прежних (1 × 1.5): их видно и с другого конца стола. */
+export const CARD_SIZE = 1.2;
+export const CARD_W = 1 * CARD_SIZE;
+export const CARD_H = 1.5 * CARD_SIZE;
+export const CARD_T = 0.03 * CARD_SIZE;
 
 /** Куда карта должна прийти. Функция — если цель движется (рука привязана к камере). */
 export interface Pose {

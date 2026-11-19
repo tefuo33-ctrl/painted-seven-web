@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { type Card, type Suit, cardLabel, isJoker } from '../engine';
-import { Card3D, type MoveOptions, type Pose, type PoseSource } from './card3d';
+import { CARD_SIZE, Card3D, type MoveOptions, type Pose, type PoseSource } from './card3d';
 import { PALETTE, glow } from './gfx';
 import type { Stage } from './stage';
 import { SEATS, seatPoint } from './table';
@@ -33,12 +33,17 @@ export interface HandAnchor {
   position: THREE.Vector3;
 }
 
-const DECK_POSITION = new THREE.Vector3(-3.0, 0.02, -3.35);
-/** Где лежит открытый козырь, когда он не в руке у раздающего: рядом с колодой. */
-const TRUMP_POSITION = new THREE.Vector3(-1.6, 0.08, -3.85);
+/**
+ * Колода — в дальнем левом углу сукна, между картами взятки соседа слева и соседа напротив.
+ * Открытый козырь лежит под колодой поперёк, как в настоящей игре: торчат его концы с индексами.
+ */
+const DECK_POSITION = new THREE.Vector3(-2.15, 0.06, -2.85);
+const DECK_YAW = 0.35;
+const TRUMP_POSITION = new THREE.Vector3(-2.15, 0.03, -2.85);
 /** Круг, по которому ложатся карты взятки: центр чуть дальше от меня, чем центр стола. */
-const TRICK_CENTER_Z = -0.6;
-const TRICK_RADIUS = 1.65;
+const TRICK_CENTER_Z = -0.45;
+/** Радиус круга взятки: карты (1.2 × 1.8, ×1.4) соседей не задевают друг друга. */
+const TRICK_RADIUS = 2.2;
 /** На каком расстоянии от глаз держится мой веер (ближе ближней плоскости камеры нельзя). */
 const HAND_NEAR = 1.6;
 /** Сколько секунд козырь показывается всем после раздачи. */
@@ -109,8 +114,8 @@ export class TableView {
 
   private deckPose(index: number): Pose {
     return {
-      position: DECK_POSITION.clone().setY(DECK_POSITION.y + index * 0.032),
-      quaternion: lying(0.35, false),
+      position: DECK_POSITION.clone().setY(DECK_POSITION.y + index * 0.036),
+      quaternion: lying(DECK_YAW, false),
     };
   }
 
@@ -131,9 +136,9 @@ export class TableView {
     };
   }
 
-  /** Козырь лежит открытым на столе рядом с колодой. */
+  /** Козырь лежит открытым под колодой, поперёк неё. */
   private trumpRestPose(): Pose {
-    return { position: TRUMP_POSITION.clone(), quaternion: lying(0, true), scale: 1.05 };
+    return { position: TRUMP_POSITION.clone(), quaternion: lying(DECK_YAW + Math.PI / 2, true), scale: 1 };
   }
 
   /**
@@ -153,7 +158,7 @@ export class TableView {
       const step = Math.min(0.16, 1.15 / Math.max(1, count - 1));
       const quaternion = quat(AXIS_Y, yaw).multiply(quat(AXIS_X, 0.28)).multiply(quat(AXIS_Z, -offset * step));
       // Центр карты — над точкой хвата; небольшой сдвиг в глубину, чтобы карты не сливались.
-      const center = new THREE.Vector3(0, 0.82, index * 0.014).applyQuaternion(quaternion).add(pivot);
+      const center = new THREE.Vector3(0, 0.82 * CARD_SIZE, index * 0.014).applyQuaternion(quaternion).add(pivot);
       return { position: center, quaternion, scale: 0.92 };
     };
   }
@@ -187,7 +192,8 @@ export class TableView {
       return {
         position: local.applyMatrix4(camera.matrixWorld),
         quaternion: camera.quaternion.clone().multiply(quat(AXIS_Z, -offset * 0.035)).multiply(quat(AXIS_X, -0.22)),
-        scale: ((this.selected === label ? 1.08 : 1) * shrink) / zoom,
+        // Свой веер — прежнего размера на экране (карты стали крупнее, а веер и так близко).
+        scale: ((this.selected === label ? 1.08 : 1) * shrink) / zoom / CARD_SIZE,
       };
     };
   }
