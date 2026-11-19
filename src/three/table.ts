@@ -17,7 +17,16 @@ export const TABLE_RADIUS = 5.85;
 const TABLE_MODEL_URL = `${import.meta.env.BASE_URL}models/poker_table.glb`;
 const MODEL_RIM_RADIUS = 0.8;
 const MODEL_FELT_HEIGHT = 0.72;
-export const FLOOR_Y = -4.2;
+/** Сколько единиц игры в одном метре 3D-сцены (стол радиусом 0.80 м — радиусом TABLE_RADIUS). */
+export const METRE = TABLE_RADIUS / MODEL_RIM_RADIUS;
+/** Пол террасы: сукно на 0.72 м выше пола. */
+export const FLOOR_Y = -MODEL_FELT_HEIGHT * METRE;
+/**
+ * На сколько опустить сидящих персонажей, чтобы они сели на воксельный стул
+ * (его сиденье на 0.48 м выше пола — ниже, чем у прежнего кресла).
+ */
+export const CHARACTER_SEAT_Y = -0.75;
+const CHAIR_MODEL_URL = `${import.meta.env.BASE_URL}models/chair.glb`;
 /** Расстояние от центра стола до кресла. */
 export const SEAT_DISTANCE = 8.0;
 
@@ -242,13 +251,39 @@ export function seatPoint(seat: number, right: number, y: number, fromCenter: nu
 export function buildChairs(): { group: THREE.Group; own: THREE.Group } {
   const group = new THREE.Group();
   let own = new THREE.Group();
+  const places: THREE.Group[] = [];
   SEATS.forEach((seat, index) => {
-    const chair = buildChair();
-    chair.position.set(seat.x, 0, seat.z);
-    chair.rotation.y = seat.angle;
-    group.add(chair);
-    if (index === 0) own = chair;
+    // В каждом месте — прежнее кресло, пока не загрузится воксельный стул.
+    const place = new THREE.Group();
+    place.position.set(seat.x, 0, seat.z);
+    place.rotation.y = seat.angle;
+    place.add(buildChair());
+    group.add(place);
+    places.push(place);
+    if (index === 0) own = place;
   });
+  new GLTFLoader().load(
+    CHAIR_MODEL_URL,
+    (gltf) => {
+      gltf.scene.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      });
+      for (const place of places) {
+        // Стул в метрах, пол на y = 0, сиденьем к +Z — разворачиваем его к столу.
+        const chair = gltf.scene.clone();
+        chair.scale.setScalar(METRE);
+        chair.position.y = FLOOR_Y;
+        chair.rotation.y = Math.PI;
+        place.clear();
+        place.add(chair);
+      }
+    },
+    undefined,
+    (error) => console.warn('Стул не загрузился — остаются прежние кресла', error),
+  );
   return { group, own };
 }
 

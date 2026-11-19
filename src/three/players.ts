@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { Character, STANDING_LEG, type Skin } from './character';
 import { type Stage, WARDROBE_SPOT } from './stage';
-import { FLOOR_Y, SEATS } from './table';
+import { CHARACTER_SEAT_Y, FLOOR_Y, SEATS } from './table';
 
 /** Где персонаж сидит относительно центра кресла (ближе к спинке). */
 const SIT_OFFSET = 0.3;
@@ -38,7 +38,7 @@ export class Players {
       const character = new Character(skin);
       const distance = Math.hypot(spot.x, spot.z);
       const scale = (distance + SIT_OFFSET) / distance;
-      character.group.position.set(spot.x * scale, 0, spot.z * scale);
+      character.group.position.set(spot.x * scale, CHARACTER_SEAT_Y, spot.z * scale);
       character.group.rotation.y = spot.angle;
       character.group.visible = seat !== 0;
       this.characters.set(seat, character);

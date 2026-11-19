@@ -9,7 +9,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { gfx, updateSnap } from './gfx';
 import { buildLocation } from './location';
 import { type Obstacle, type OrbitView, OrbitCamera } from './orbit';
-import { SEATS, buildChairs, buildTable } from './table';
+import { FLOOR_Y, SEATS, buildChairs, buildTable } from './table';
 
 /** Виньетка: края кадра слегка темнеют. */
 const VignetteShader = {
@@ -81,7 +81,11 @@ export function createStage(container: HTMLElement): Stage {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, 1, 1.2, 600);
 
-  const location = buildLocation(scene);
+  // Дальний фон (небо, море, город) — до 7 км: отдельная сцена и камера с большой дальностью,
+  // рисуется первой; ближняя сцена — поверх, с очищенной глубиной.
+  const background = new THREE.Scene();
+  const backgroundCamera = new THREE.PerspectiveCamera(50, 1, 20, 60000);
+  const location = buildLocation(scene, background);
   scene.add(location.group);
   const table = buildTable();
   scene.add(table);
@@ -108,7 +112,11 @@ export function createStage(container: HTMLElement): Stage {
     renderer,
     new THREE.WebGLRenderTarget(1, 1, { samples: 4, type: THREE.HalfFloatType }),
   );
-  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(new RenderPass(background, backgroundCamera));
+  const nearPass = new RenderPass(scene, camera);
+  nearPass.clear = false; // поверх дальнего фона
+  nearPass.clearDepth = true;
+  composer.addPass(nearPass);
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), gfx.bloomStrength, 0.5, 0.9);
   composer.addPass(bloom);
   const vignette = new ShaderPass(VignetteShader);
@@ -156,7 +164,7 @@ export function createStage(container: HTMLElement): Stage {
 
   function wardrobeView(aspect: number): OrbitView {
     return {
-      target: new THREE.Vector3(WARDROBE_SPOT.x, 0.4, WARDROBE_SPOT.z),
+      target: new THREE.Vector3(WARDROBE_SPOT.x, FLOOR_Y + 4.6, WARDROBE_SPOT.z),
       azimuth: 0,
       elevation: 0.06,
       distance: aspect < 1 ? 17 : 13.5,
@@ -185,7 +193,7 @@ export function createStage(container: HTMLElement): Stage {
       orbit.setView(wardrobeView(aspect), instant);
       orbit.obstacles = [];
       orbit.maxRadius = Infinity;
-      orbit.minHeight = -3.4;
+      orbit.minHeight = FLOOR_Y + 0.8;
       orbit.maxHeight = 12;
     }
   }
@@ -277,6 +285,15 @@ export function createStage(container: HTMLElement): Stage {
       wardrobeLight.position.copy(camera.position).add(new THREE.Vector3(0, 2.5, 0));
     }
     location.update(time);
+    // Камера дальнего фона смотрит так же, как основная.
+    backgroundCamera.position.copy(camera.position);
+    backgroundCamera.quaternion.copy(camera.quaternion);
+    if (backgroundCamera.fov !== camera.fov || backgroundCamera.aspect !== camera.aspect || camera.view) {
+      backgroundCamera.fov = camera.fov;
+      backgroundCamera.aspect = camera.aspect;
+      backgroundCamera.view = camera.view ? { ...camera.view } : null;
+      backgroundCamera.updateProjectionMatrix();
+    }
     // Своё кресло видно, только когда камера ушла со своего места.
     chairs.own.visible = view === 'table' && awayFromSeat();
     for (const callback of callbacks) callback(time, delta);

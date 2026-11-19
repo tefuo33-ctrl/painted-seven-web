@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { glow, paintedTexture, seededRandom, smooth } from './gfx';
+import { AMBIENT_COLOR, LANTERN_POSITIONS, SUN_COLOR, SUN_DIRECTION, loadSunsetScene } from './sunset';
 import { FLOOR_Y, TABLE_RADIUS } from './table';
 
 const SEA_Y = -11;
@@ -12,6 +13,11 @@ const CEILING_Y = 12.5;
 /** Яркость света под люстрой и у свечей (подобрана так, чтобы сукно было светлым, как на превью). */
 const MAIN_LIGHT = 40;
 const CANDLE_LIGHT = 3;
+/** Свет сцены заката: солнце, общий свет, небо и фонари на балюстраде. */
+const SUN_LIGHT = 2.2;
+const AMBIENT_LIGHT = 1.6;
+const SKY_LIGHT = 0.9;
+const LANTERN_LIGHT = 30;
 const SKY_Z = -260;
 
 export interface Location {
@@ -644,7 +650,11 @@ function buildSideTable(): { table: THREE.Group; flame: THREE.Mesh } {
   return { table, flame };
 }
 
-export function buildLocation(scene: THREE.Scene): Location {
+/**
+ * Локация. Сразу строится прежняя (собранная кодом), а когда загрузится сцена заката из 3D-сессии,
+ * она её заменяет: ближняя часть — в `scene`, дальний фон — в `background` (рисуется отдельно).
+ */
+export function buildLocation(scene: THREE.Scene, background: THREE.Scene): Location {
   const group = new THREE.Group();
   const flames: THREE.Mesh[] = [];
 
@@ -735,9 +745,9 @@ export function buildLocation(scene: THREE.Scene): Location {
       // Цепь от крепления люстры до потолка.
       for (let y = attachY + 0.21; y < CEILING_Y; y += 0.42) {
         const link = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.035, 6, 10), smooth(0x3a2a16, 30));
-        link.position.set(0, y, 0);
+        link.position.set(0, y - attachY, 0);
         link.rotation.y = (Math.round(y / 0.42) % 2) * (Math.PI / 2);
-        group.add(link);
+        chandelier.add(link);
       }
       group.remove(fallback);
       flames.splice(flames.indexOf(main.flame), 1);
@@ -783,12 +793,43 @@ export function buildLocation(scene: THREE.Scene): Location {
   scene.fog = new THREE.Fog(0xd87a5a, 80, 520);
   scene.background = new THREE.Color(0x2a2356);
 
+  // Сцена заката: когда загрузится, убираем всё прежнее, кроме люстры и её света.
+  const keep = new Set<THREE.Object3D>([fallback, chandelier, light, ...candles]);
+  const lanterns: THREE.PointLight[] = [];
+  void loadSunsetScene()
+    .then(({ near, far }) => {
+      for (const child of [...group.children]) if (!keep.has(child)) group.remove(child);
+      flames.length = 0;
+      scene.fog = null;
+      scene.background = null; // небо теперь рисуется дальним фоном
+      group.add(near);
+      background.add(far);
+      // Свет заката: низкое солнце со стороны моря и общий тёплый свет неба — в обеих сценах.
+      for (const target of [group, background]) {
+        const sun = new THREE.DirectionalLight(SUN_COLOR, SUN_LIGHT);
+        sun.position.copy(SUN_DIRECTION).multiplyScalar(60);
+        target.add(sun);
+        target.add(new THREE.AmbientLight(AMBIENT_COLOR, AMBIENT_LIGHT));
+        target.add(new THREE.HemisphereLight(0xffb48a, 0x3a2440, SKY_LIGHT));
+      }
+      for (const position of LANTERN_POSITIONS) {
+        const lantern = new THREE.PointLight(0xffb35a, LANTERN_LIGHT, 45, 1.2);
+        lantern.position.copy(position);
+        lanterns.push(lantern);
+        group.add(lantern);
+      }
+    })
+    .catch((error) => console.warn('Сцена заката не загрузилась — остаётся прежняя локация', error));
+
   return {
     group,
     update(time) {
       // Мерцание пламени: несколько волн разной частоты.
       const flicker = 1 + Math.sin(time * 9.1) * 0.04 + Math.sin(time * 23.7) * 0.03 + Math.sin(time * 3.3) * 0.05;
       light.intensity = MAIN_LIGHT * flicker;
+      lanterns.forEach((lantern, i) => {
+        lantern.intensity = LANTERN_LIGHT * (1 + Math.sin(time * (6 + i) + i * 3) * 0.06);
+      });
       candles.forEach((candle, i) => {
         candle.intensity = CANDLE_LIGHT * (1 + Math.sin(time * (7 + i) + i) * 0.1);
       });

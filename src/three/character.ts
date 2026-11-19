@@ -14,7 +14,7 @@ import {
   TIES,
 } from '../shared/skin';
 import { PALETTE, hex, paintedTexture, seededRandom, smooth } from './gfx';
-import { FLOOR_Y } from './table';
+import { CHARACTER_SEAT_Y, FLOOR_Y } from './table';
 
 export * from '../shared/skin';
 
@@ -481,7 +481,8 @@ export class Character {
     const heel = female ? SHOES_FEMALE[skin.shoes].heel : 0;
     const radius = female ? 0.32 : 0.5;
     // Стоящий персонаж ниже: его «пол» — на длину коротких ног под бёдрами.
-    const ground = seated ? FLOOR_Y : HIP_Y - STANDING_LEG;
+    // Сидящий опущен на CHARACTER_SEAT_Y — ноги всё равно доходят до пола.
+    const ground = seated ? FLOOR_Y - CHARACTER_SEAT_Y : HIP_Y - STANDING_LEG;
     const footY = ground + 0.22 + heel * 0.5;
 
     for (const side of [1, -1]) {
