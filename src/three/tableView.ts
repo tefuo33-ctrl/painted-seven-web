@@ -37,13 +37,16 @@ export interface HandAnchor {
  * Колода — в дальнем левом углу сукна, между картами взятки соседа слева и соседа напротив.
  * Открытый козырь лежит под колодой поперёк, как в настоящей игре: торчат его концы с индексами.
  */
-const DECK_POSITION = new THREE.Vector3(-2.15, 0.06, -2.85);
-const DECK_YAW = 0.35;
-const TRUMP_POSITION = new THREE.Vector3(-2.15, 0.03, -2.85);
+const DECK_POSITION = new THREE.Vector3(2.45, 0.06, -3.3);
+const DECK_YAW = -0.12;
+/** Козырь под колодой поперёк и чуть ближе ко мне — видна его половина с индексом. */
+const TRUMP_POSITION = new THREE.Vector3(2.45, 0.03, -2.95);
 /** Круг, по которому ложатся карты взятки: центр чуть дальше от меня, чем центр стола. */
-const TRICK_CENTER_Z = -0.45;
-/** Радиус круга взятки: карты (1.2 × 1.8, ×1.4) соседей не задевают друг друга. */
-const TRICK_RADIUS = 2.2;
+const TRICK_CENTER_Z = -1.3;
+/** Шаг между картами взятки в ряду. */
+const TRICK_SPACING = 1.5;
+/** Половина вертикального угла обзора (тангенс), при которой веер имеет «родной» размер. */
+const HAND_REFERENCE_TAN = Math.tan(THREE.MathUtils.degToRad(37.8));
 /** На каком расстоянии от глаз держится мой веер (ближе ближней плоскости камеры нельзя). */
 const HAND_NEAR = 1.6;
 /** Сколько секунд козырь показывается всем после раздачи. */
@@ -123,16 +126,16 @@ export class TableView {
    * Карты взятки ложатся по кругу: каждая — перед тем, кто ею сходил, и повёрнута к нему.
    * Круг сдвинут от меня вглубь стола, чтобы мой веер его не закрывал.
    */
+  /**
+   * Карты взятки ложатся в ряд посередине стола, слева направо по порядку хода, лицом ко мне —
+   * как на превью стола из 3D-сессии. Чуть повёрнуты, чтобы не выглядели выложенными по линейке.
+   */
   private trickPose(seat: number, order: number, card: Card): Pose {
-    const spot = SEATS[seat];
+    void seat;
     return {
-      position: new THREE.Vector3(
-        Math.sign(spot.x) * TRICK_RADIUS,
-        0.09 + order * 0.03,
-        TRICK_CENTER_Z + Math.sign(spot.z) * TRICK_RADIUS,
-      ),
-      quaternion: lying(spot.angle + jitter(cardLabel(card)), true),
-      scale: 1.4, // карты взятки крупнее: их должны прочитать все
+      position: new THREE.Vector3((order - 1.5) * TRICK_SPACING, 0.09 + order * 0.01, TRICK_CENTER_Z),
+      quaternion: lying(jitter(cardLabel(card)) * 0.5, true),
+      scale: 1.3, // карты взятки крупнее: их должны прочитать все
     };
   }
 
@@ -177,14 +180,17 @@ export class TableView {
       const shrink = HAND_NEAR / distance;
       const halfHeight = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * distance * zoom;
       const halfWidth = halfHeight * camera.aspect;
-      const spacing = count > 1 ? Math.min(0.78, (halfWidth * 2 - 1.3) / (count - 1)) : 0;
+      // Карты веера — одной и той же доли высоты экрана при любом угле обзора
+      // (на широком экране обзор уже, и без этого веер разрастался на полстола).
+      const unit = halfHeight / (HAND_REFERENCE_TAN * distance);
+      const spacing = count > 1 ? Math.min(0.78 * unit, (halfWidth * 2 - 1.3 * unit) / (count - 1)) : 0;
       const offset = index - (count - 1) / 2;
       const raised =
-        (playable ? 0.14 : 0) + (this.hovered === label && playable ? 0.14 : 0) + (this.selected === label ? 0.36 : 0);
-      // Веер не у самого края экрана, а чуть выше — над краем стола.
+        ((playable ? 0.14 : 0) + (this.hovered === label && playable ? 0.14 : 0) + (this.selected === label ? 0.36 : 0)) * unit;
+      // Веер у нижнего края экрана, под рядом взятки.
       const local = new THREE.Vector3(
         offset * spacing,
-        -halfHeight * 0.7 - offset * offset * 0.012 + raised,
+        -halfHeight * 0.78 - offset * offset * 0.012 * unit + raised,
         -distance + index * 0.02,
       ).multiplyScalar(shrink);
       local.x /= zoom;
@@ -193,7 +199,7 @@ export class TableView {
         position: local.applyMatrix4(camera.matrixWorld),
         quaternion: camera.quaternion.clone().multiply(quat(AXIS_Z, -offset * 0.035)).multiply(quat(AXIS_X, -0.22)),
         // Свой веер — прежнего размера на экране (карты стали крупнее, а веер и так близко).
-        scale: ((this.selected === label ? 1.08 : 1) * shrink) / zoom / CARD_SIZE,
+        scale: ((this.selected === label ? 1.08 : 1) * shrink * unit) / zoom / CARD_SIZE,
       };
     };
   }

@@ -143,8 +143,11 @@ export function createStage(container: HTMLElement): Stage {
     const narrow = THREE.MathUtils.clamp((1.3 - aspect) / 0.8, 0, 1); // 1 — вертикальный телефон
     // Глаза игрока — за краем стола (край — на z = 5.85), как в начале: виден весь стол и свои карты.
     // На вертикальном телефоне садимся дальше и выше, чтобы в кадр попали и игроки по бокам.
-    const eye = new THREE.Vector3(0, THREE.MathUtils.lerp(4.6, 8.6, narrow), THREE.MathUtils.lerp(10.2, 12.6, narrow));
-    const look = new THREE.Vector3(0, THREE.MathUtils.lerp(0.9, 0.2, narrow), -0.4);
+    // Как в эталоне (вид из-за стола в духе Buckshot Roulette): глаза у самого края стола (край — z 5.85),
+    // взгляд чуть вниз; ближний край стола уходит за низ экрана, дальний — чуть ниже середины,
+    // лицо соперника напротив — на трети высоты сверху.
+    const eye = new THREE.Vector3(0, THREE.MathUtils.lerp(3.6, 8.6, narrow), THREE.MathUtils.lerp(7.3, 12.6, narrow));
+    const look = new THREE.Vector3(0, THREE.MathUtils.lerp(2.1, 0.2, narrow), -0.4);
     const pitch = Math.atan2(look.y - eye.y, eye.z - look.z);
     return {
       target: look,
@@ -223,6 +226,9 @@ export function createStage(container: HTMLElement): Stage {
     const neededFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(46)) / aspect));
     // На вертикальном телефоне угол шире, чтобы были видны игроки по бокам.
     tableFov = THREE.MathUtils.clamp(neededFov, 56, aspect < 1 ? 100 : 80);
+    // На широком экране обзор чуть уже (в 1.2 раза) — стол и соперник напротив крупнее.
+    const tighten = THREE.MathUtils.lerp(1.2, 1, THREE.MathUtils.clamp((1.3 - aspect) / 0.8, 0, 1));
+    tableFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(tableFov) / 2) / tighten));
     camera.fov = view === 'wardrobe' ? (aspect < 1 ? 60 : 44) : zoomedFov();
     if (aspectChanged) applyView(true);
     if (view === 'wardrobe' && aspect >= 1) {
