@@ -184,6 +184,15 @@ export function playCardSound(): void {
   noiseHit(320, 0.09, 0.2, 0, 'lowpass');
 }
 
+/** Слиток ложится на стол: короткий металлический звон и глухой стук. */
+export function playGoldSound(): void {
+  const pitch = 0.92 + Math.random() * 0.16;
+  tone(2350 * pitch, 0.22, 0.06, 0, 'sine');
+  tone(3480 * pitch, 0.16, 0.035, 0, 'sine');
+  tone(5210 * pitch, 0.09, 0.02, 0, 'sine');
+  noiseHit(900, 0.05, 0.12, 0, 'lowpass');
+}
+
 /** Карта скользит (выбор карты в руке). */
 export function playSlideSound(): void {
   noiseHit(3200, 0.11, 0.07, 0, 'highpass');

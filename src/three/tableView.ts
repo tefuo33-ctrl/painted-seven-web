@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { type Card, type Suit, cardLabel, isJoker } from '../engine';
 import { CARD_SIZE, Card3D, type MoveOptions, type Pose, type PoseSource } from './card3d';
 import { PALETTE, glow } from './gfx';
+import { GoldBars } from './goldBars';
 import type { Stage } from './stage';
 import { SEATS, seatPoint } from './table';
 
@@ -24,6 +25,8 @@ export interface TableState {
   trump: Suit | null;
   /** Карты моей руки, которыми можно ходить (пусто, если ход не мой). */
   playable: Card[];
+  /** Заказ каждого (по местам); null — заказа нет (ещё не заказал или раунд без заказа). */
+  bids: (number | null)[];
   /** Сколько взяток взял каждый в этом раунде (по местам). */
   taken: number[];
 }
@@ -87,6 +90,7 @@ export class TableView {
   private trumpTimer = 0;
   private crystal: THREE.Mesh;
   private state: TableState | null = null;
+  private gold: GoldBars;
 
   constructor(stage: Stage) {
     this.stage = stage;
@@ -110,6 +114,11 @@ export class TableView {
     this.group.add(this.crystal);
 
     stage.scene.add(this.group);
+    // Слитки заказа: вылетают из кистей игрока (у меня — снизу экрана, из веера).
+    this.gold = new GoldBars(stage.scene, (seat) => {
+      if (seat === 0) return new THREE.Vector3(0, -1.6, -5).applyMatrix4(this.stage.camera.matrixWorld);
+      return this.handAnchor(seat)?.position.clone() ?? seatPoint(seat, 0, 2, 6.5);
+    });
     stage.onFrame((time, delta) => this.update(time, delta));
   }
 
@@ -315,6 +324,7 @@ export class TableView {
       card.mesh.visible = false;
     });
 
+    this.gold.sync(state.bids, state.taken);
     if (!state.trumpCard) this.hideTrump();
     else if (options.deal) {
       const delay = 0.6 + state.hands.flat().length * 0.085;
@@ -432,6 +442,7 @@ export class TableView {
 
   private update(time: number, delta: number): void {
     for (const card of this.cards) card.update(delta);
+    this.gold.update(delta);
     this.trumpCard.update(delta);
 
     // Показ козыря закончился: карта ложится на стол рядом с колодой

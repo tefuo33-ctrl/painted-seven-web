@@ -1,6 +1,6 @@
 // Переводит состояние партии из движка в то, что видит один игрок за 3D-столом.
 
-import { type Card, type GameState, legalCardsFor } from '../engine';
+import { type Card, type GameState, currentRound, hasBidding, legalCardsFor } from '../engine';
 import type { TableState } from './tableView';
 
 /** `me` — номер игрока, глазами которого смотрим. Его место — 0, остальные по часовой стрелке. */
@@ -50,6 +50,8 @@ export function tableStateFromGame(game: GameState, me: number): TableState {
     trump: game.trump,
     playable: myTurn ? legalCardsFor(game, me) : [],
     taken: bySeat((player) => game.taken[player] ?? 0, 0),
+    // В «Минусах» и «Плюсах» заказа нет — и слитков тоже.
+    bids: bySeat((player) => (hasBidding(currentRound(game).mode) ? (game.bids[player] ?? null) : null), null as number | null),
   };
 }
 
