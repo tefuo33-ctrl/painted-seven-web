@@ -196,10 +196,10 @@ export class TableView {
       const offset = index - (count - 1) / 2;
       const raised =
         ((playable ? 0.14 : 0) + (this.hovered === label && playable ? 0.14 : 0) + (this.selected === label ? 0.36 : 0)) * unit;
-      // Веер у нижнего края экрана, под рядом взятки.
+      // Веер в нижней части экрана, на 10–20 % выше нижнего края, под рядом взятки.
       const local = new THREE.Vector3(
         offset * spacing,
-        -halfHeight * 0.78 - offset * offset * 0.012 * unit + raised,
+        -halfHeight * 0.62 - offset * offset * 0.012 * unit + raised,
         -distance + index * 0.02,
       ).multiplyScalar(shrink);
       local.x /= zoom;

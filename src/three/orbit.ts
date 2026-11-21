@@ -58,6 +58,9 @@ export class OrbitCamera {
   private lift = 0;
   /** Зажата правая кнопка мыши — приближаем, пока держат. */
   private leaning = false;
+  /** Можно ли начинать поворот с этой точки экрана (не с карты в руке). Задаёт игра. */
+  canRotate: (x: number, y: number) => boolean = () => true;
+  private rotating = true;
   private leanBase = 0;
 
   constructor(camera: THREE.PerspectiveCamera, element: HTMLElement, view: OrbitView) {
@@ -81,6 +84,7 @@ export class OrbitCamera {
       if (this.pointers.size === 1) {
         this.moved = 0;
         this.dragged = false;
+        this.rotating = this.canRotate(event.clientX, event.clientY);
       }
       if (this.pointers.size === 2) this.pinchDistance = this.pointerSpread();
     });
@@ -105,8 +109,22 @@ export class OrbitCamera {
         this.dragged = true;
         element.setPointerCapture(event.pointerId);
       }
-      // За столом камера не поворачивается: перетаскивание — это работа с картами.
-      if (this.goal.eye) return;
+      if (this.goal.eye) {
+        // За столом: тянешь вправо — смотришь вправо, вверх — смотришь вверх (в пределах).
+        // Перетаскивание, начатое на карте руки, — это перестановка карт, а не поворот.
+        if (!this.rotating) return;
+        this.goal.azimuth = THREE.MathUtils.clamp(
+          this.goal.azimuth + dx * 0.003,
+          this.goal.minAzimuth ?? -Infinity,
+          this.goal.maxAzimuth ?? Infinity,
+        );
+        this.goal.elevation = THREE.MathUtils.clamp(
+          this.goal.elevation - dy * 0.0025,
+          this.goal.minElevation,
+          this.goal.maxElevation,
+        );
+        return;
+      }
       this.goal.azimuth -= dx * 0.0055;
       this.goal.elevation = THREE.MathUtils.clamp(
         this.goal.elevation + dy * 0.0045,

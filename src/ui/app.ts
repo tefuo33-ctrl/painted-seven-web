@@ -797,6 +797,9 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     }
   });
 
+  // Поворот камеры начинается только не с карты руки (с карты — перестановка).
+  stage.orbit.canRotate = (x, y) => ui.screen !== 'game' || table.pick(x, y) === null;
+
   // Перестановка карт в руке: зажать карту и тянуть влево или вправо.
   let dragging: { label: string; startX: number; moved: boolean } | null = null;
   stage.canvas.addEventListener('pointerdown', (event) => {
