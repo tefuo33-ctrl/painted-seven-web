@@ -25,6 +25,8 @@ export interface TableState {
   trump: Suit | null;
   /** Карты моей руки, которыми можно ходить (пусто, если ход не мой). */
   playable: Card[];
+  /** Мой веер убран вниз за экран: идёт розыгрыш, а ход не мой. */
+  handAway: boolean;
   /** У чьего места лежит колода: у раздающего, а когда карты розданы — у следующего раздающего. */
   deckSeat: number;
   /** Место раздающего: пока идёт раздача, колода у него. */
@@ -93,6 +95,8 @@ export class TableView {
   private trumpTimer = 0;
   private crystal: THREE.Mesh;
   private state: TableState | null = null;
+  /** Веер сейчас убран (см. TableState.handAway). */
+  private handAway = false;
   /** Где сейчас колода (справа от раздающего) и куда ложится козырь. */
   private deckSpot = TableView.deckSpotFor(0);
   private deckSeat = 0;
@@ -217,9 +221,11 @@ export class TableView {
       const raised =
         ((playable ? 0.14 : 0) + (this.hovered === label && playable ? 0.14 : 0) + (this.selected === label ? 0.36 : 0)) * unit;
       // Веер в нижней части экрана, на 10–20 % выше нижнего края, под рядом взятки.
+      // Не мой ход в розыгрыше — веер уезжает вниз за край экрана, мой ход — возвращается.
+      const away = this.handAway ? halfHeight * 0.85 : 0;
       const local = new THREE.Vector3(
         offset * spacing,
-        -halfHeight * 0.62 - offset * offset * 0.012 * unit + raised,
+        -halfHeight * 0.62 - offset * offset * 0.012 * unit + raised - away,
         -distance + index * 0.02,
       ).multiplyScalar(shrink);
       local.x /= zoom;
@@ -250,6 +256,8 @@ export class TableView {
   sync(state: TableState, options: { deal?: boolean; firstSeat?: number } = {}): void {
     this.state = state;
     // Колода — справа от раздающего; после раздачи — справа от следующего раздающего.
+    const handMoved = state.handAway !== this.handAway;
+    this.handAway = state.handAway;
     const deckSeat = options.deal ? state.dealerSeat : state.deckSeat;
     const deckMoved = deckSeat !== this.deckSeat;
     this.deckSeat = deckSeat;
@@ -342,7 +350,10 @@ export class TableView {
       if (isNew || options.deal) void card.moveTo(want.pose, want.move);
       // Колода переезжает к следующему раздающему плавно, дугой, карта за картой.
       else if (deckMoved && want.key.startsWith('d:')) void card.moveTo(want.pose, { duration: 0.7, arc: 0.9, delay: Number(want.key.slice(2)) * 0.012 });
-      else void card.moveTo(want.pose, { duration: 0.18 });
+      // Веер уезжает и возвращается плавно, карты чуть друг за другом.
+      else if (handMoved && want.key.startsWith('c:') && state.hands[0].some((c) => c && `c:${cardLabel(c)}` === want.key)) {
+        void card.moveTo(want.pose, { duration: 0.45, delay: (want.key.length % 4) * 0.025 });
+      } else void card.moveTo(want.pose, { duration: 0.18 });
     }
 
     // Лишние карты (например, собранные взятки) прячем.
