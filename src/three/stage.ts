@@ -65,6 +65,9 @@ export interface Stage {
 }
 
 /** Точка, вокруг которой стоит персонаж в «Гардеробе». */
+/** На сколько окружение повёрнуто вокруг стола (радианы; больше — сильнее на город). */
+const VIEW_TURN = THREE.MathUtils.degToRad(18);
+
 export const WARDROBE_SPOT = new THREE.Vector3(0, 0, 16);
 
 export function createStage(container: HTMLElement): Stage {
@@ -86,6 +89,10 @@ export function createStage(container: HTMLElement): Stage {
   const background = new THREE.Scene();
   const backgroundCamera = new THREE.PerspectiveCamera(50, 1, 20, 60000);
   const location = buildLocation(scene, background);
+  // Стол со стульями стоит на террасе наискосок: всё окружение (терраса, небо, море, город)
+  // повёрнуто вокруг стола, и с места игрока взгляд уходит чуть больше на город справа.
+  location.group.rotation.y = VIEW_TURN;
+  background.rotation.y = VIEW_TURN;
   scene.add(location.group);
   const table = buildTable();
   scene.add(table);
