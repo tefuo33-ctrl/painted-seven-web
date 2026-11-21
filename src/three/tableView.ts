@@ -25,6 +25,10 @@ export interface TableState {
   trump: Suit | null;
   /** Карты моей руки, которыми можно ходить (пусто, если ход не мой). */
   playable: Card[];
+  /** У чьего места лежит колода: у раздающего, а когда карты розданы — у следующего раздающего. */
+  deckSeat: number;
+  /** Место раздающего: пока идёт раздача, колода у него. */
+  dealerSeat: number;
   /** Заказ каждого (по местам); null — заказа нет (ещё не заказал или раунд без заказа). */
   bids: (number | null)[];
   /** Сколько взяток взял каждый в этом раунде (по местам). */
@@ -37,13 +41,12 @@ export interface HandAnchor {
 }
 
 /**
- * Колода — в центре стола, внутри круга, по которому ложатся карты взятки.
- * Открытый козырь лежит под колодой поперёк, как в настоящей игре: торчат его концы с индексами.
+ * Колода лежит справа от того, кто раздаёт (слитки — слева от каждого), на его краю стола.
+ * Как только карты розданы, колода переезжает к следующему раздающему.
+ * Открытый козырь лежит под колодой поперёк и чуть ближе к центру — видны его концы с индексами.
  */
-const DECK_POSITION = new THREE.Vector3(0, 0.06, -0.6);
-const DECK_YAW = -0.12;
-/** Козырь под колодой поперёк и чуть ближе ко мне — видна его половина с индексом. */
-const TRUMP_POSITION = new THREE.Vector3(0, 0.03, -0.15);
+const DECK_RIGHT = 3.6;
+const DECK_FROM_CENTER = 4.8;
 /** Круг, по которому ложатся карты взятки: центр чуть дальше от меня, чем центр стола. */
 const TRICK_CENTER_Z = -0.5;
 /** Радиус круга взятки: каждая карта — перед тем, кто ею сходил. */
@@ -90,6 +93,19 @@ export class TableView {
   private trumpTimer = 0;
   private crystal: THREE.Mesh;
   private state: TableState | null = null;
+  /** Где сейчас колода (справа от раздающего) и куда ложится козырь. */
+  private deckSpot = TableView.deckSpotFor(0);
+  private deckSeat = 0;
+
+  /** Место колоды справа от игрока на месте `seat`, на его краю стола. */
+  private static deckSpotFor(seat: number): { position: THREE.Vector3; trump: THREE.Vector3; yaw: number } {
+    const position = seatPoint(seat, DECK_RIGHT, 0.06, DECK_FROM_CENTER);
+    return {
+      position,
+      trump: seatPoint(seat, DECK_RIGHT, 0.03, DECK_FROM_CENTER - 0.45),
+      yaw: SEATS[seat].angle + 0.1,
+    };
+  }
   private gold: GoldBars;
 
   constructor(stage: Stage) {
@@ -126,8 +142,8 @@ export class TableView {
 
   private deckPose(index: number): Pose {
     return {
-      position: DECK_POSITION.clone().setY(DECK_POSITION.y + index * 0.036),
-      quaternion: lying(DECK_YAW, false),
+      position: this.deckSpot.position.clone().setY(0.06 + index * 0.036),
+      quaternion: lying(this.deckSpot.yaw, false),
     };
   }
 
@@ -154,7 +170,7 @@ export class TableView {
 
   /** Козырь лежит открытым под колодой, поперёк неё. */
   private trumpRestPose(): Pose {
-    return { position: TRUMP_POSITION.clone(), quaternion: lying(DECK_YAW + Math.PI / 2, true), scale: 1 };
+    return { position: this.deckSpot.trump.clone(), quaternion: lying(this.deckSpot.yaw + Math.PI / 2, true), scale: 1 };
   }
 
   /**
@@ -233,6 +249,11 @@ export class TableView {
    */
   sync(state: TableState, options: { deal?: boolean; firstSeat?: number } = {}): void {
     this.state = state;
+    // Колода — справа от раздающего; после раздачи — справа от следующего раздающего.
+    const deckSeat = options.deal ? state.dealerSeat : state.deckSeat;
+    const deckMoved = deckSeat !== this.deckSeat;
+    this.deckSeat = deckSeat;
+    this.deckSpot = TableView.deckSpotFor(deckSeat);
     interface Wanted {
       key: string;
       face: Card | null;
@@ -319,6 +340,8 @@ export class TableView {
       if (card.face !== want.face) card.setFace(want.face);
       card.setLook(want.look);
       if (isNew || options.deal) void card.moveTo(want.pose, want.move);
+      // Колода переезжает к следующему раздающему плавно, дугой, карта за картой.
+      else if (deckMoved && want.key.startsWith('d:')) void card.moveTo(want.pose, { duration: 0.7, arc: 0.9, delay: Number(want.key.slice(2)) * 0.012 });
       else void card.moveTo(want.pose, { duration: 0.18 });
     }
 
@@ -338,6 +361,10 @@ export class TableView {
       else this.layTrump(state.trumpCard, delay);
     }
     else if (this.trumpTimer <= 0) this.restTrump(state.trumpCard, state.trumpSeat);
+    // Козырь под колодой переезжает вместе с ней.
+    if (deckMoved && this.trumpTimer <= 0 && this.trumpCard.mesh.visible && state.trumpSeat === null) {
+      void this.trumpCard.moveTo(this.trumpRestPose(), { duration: 0.7, arc: 0.9 });
+    }
   }
 
   /** Козырь с верха колоды переворачивается и ложится рядом с ней. */
@@ -345,7 +372,7 @@ export class TableView {
     this.trumpTimer = 0;
     this.trumpCard.setFace(card);
     this.trumpCard.setLook('normal');
-    this.trumpCard.place({ position: DECK_POSITION.clone().setY(0.6), quaternion: lying(0.35, false), scale: 1 });
+    this.trumpCard.place({ position: this.deckSpot.position.clone().setY(0.6), quaternion: lying(this.deckSpot.yaw, false), scale: 1 });
     this.trumpCard.mesh.visible = true;
     void this.trumpCard.moveTo(this.trumpRestPose(), { duration: 0.5, arc: 0.5, delay });
   }
@@ -368,7 +395,7 @@ export class TableView {
     this.trumpCard.setFace(card);
     this.trumpCard.setLook('lit');
     this.trumpCard.mesh.visible = true;
-    this.trumpCard.place({ position: DECK_POSITION.clone().setY(0.6), quaternion: lying(0.35, false), scale: 1 });
+    this.trumpCard.place({ position: this.deckSpot.position.clone().setY(0.6), quaternion: lying(this.deckSpot.yaw, false), scale: 1 });
     // Карта развёрнута лицом к камере, чтобы её было видно с любого места.
     const pose: PoseSource = () => ({
       position: new THREE.Vector3(0, 2.3, -0.6),

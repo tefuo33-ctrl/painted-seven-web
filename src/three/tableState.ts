@@ -50,6 +50,8 @@ export function tableStateFromGame(game: GameState, me: number): TableState {
     trump: game.trump,
     playable: myTurn ? legalCardsFor(game, me) : [],
     taken: bySeat((player) => game.taken[player] ?? 0, 0),
+    deckSeat: seatOf(game.dealt ? (game.dealer + 1) % count : game.dealer),
+    dealerSeat: seatOf(game.dealer),
     // В «Минусах» и «Плюсах» заказа нет — и слитков тоже.
     bids: bySeat((player) => (hasBidding(currentRound(game).mode) ? (game.bids[player] ?? null) : null), null as number | null),
   };
