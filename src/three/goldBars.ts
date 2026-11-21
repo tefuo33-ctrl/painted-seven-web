@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { playGoldSound } from '../ui/sound';
-import { METRE } from './table';
+import { METRE, SEATS, seatPoint } from './table';
 
 const MODEL_URL = `${import.meta.env.BASE_URL}models/gold_bar.glb`;
 /** Слиток в 1.2 раза крупнее настоящего (8 см), чтобы его было видно с другого конца стола. */
@@ -19,6 +19,9 @@ const BAR_HEIGHT = 0.024;
 /** Пирамидка: сколько слитков в каждом слое снизу вверх. */
 const LAYERS = [4, 3, 2];
 const FLIGHT = 0.6;
+/** Насколько левее игрока и как далеко от центра стола лежит его стопка. */
+const STACK_LEFT = 3.6;
+const STACK_FROM_CENTER = 5.0;
 const STAGGER = 0.13;
 
 /**
@@ -26,12 +29,12 @@ const STAGGER = 0.13;
  * Места: 0 — я, 1 — слева, 2 — напротив, 3 — справа. Подобраны так, чтобы не задевать
  * ряд взятки посередине, колоду справа вдали и борт стола.
  */
-const STACKS: { x: number; z: number; yaw: number }[] = [
-  { x: -3.8, z: 2.0, yaw: 0 }, // мои — слева снизу, левее веера
-  { x: -3.8, z: -0.1, yaw: 0 },
-  { x: -1.9, z: -3.7, yaw: Math.PI / 2 },
-  { x: 3.8, z: -0.1, yaw: 0 },
-];
+const STACKS: { x: number; z: number; yaw: number }[] = SEATS.map((seat, index) => {
+  // У каждого — слева от него (если смотреть с его места), ближе к его краю стола.
+  const point = seatPoint(index, -STACK_LEFT, 0, STACK_FROM_CENTER);
+  // Слитки лежат длинной стороной к игроку, ряд — вдоль его края стола.
+  return { x: point.x, z: point.z, yaw: seat.angle + Math.PI / 2 };
+});
 
 interface Bar {
   mesh: THREE.Mesh;

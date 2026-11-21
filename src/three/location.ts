@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { glow, paintedTexture, seededRandom, smooth } from './gfx';
 import { AMBIENT_COLOR, LANTERN_POSITIONS, SUN_COLOR, SUN_DIRECTION, loadSunsetScene } from './sunset';
-import { FLOOR_Y, TABLE_RADIUS } from './table';
+import { FLOOR_Y, METRE } from './table';
 
 const SEA_Y = -11;
 const EDGE_Z = -13; // край террасы с балюстрадой
@@ -725,8 +725,8 @@ export function buildLocation(scene: THREE.Scene, background: THREE.Scene): Loca
   group.add(fallback);
 
   // Люстра в метрах: точка крепления — начало координат, висит вниз на 0.80 м.
-  // Масштаб — как у стола (TABLE_RADIUS / 0.80 м); крепление на 1.6 м выше сукна, низ — на 0.8 м.
-  const metre = TABLE_RADIUS / 0.8;
+  // Масштаб сцены (METRE); крепление на 1.6 м выше сукна, низ — на 0.8 м.
+  const metre = METRE;
   const attachY = 1.6 * metre;
   const chandelier = new THREE.Group();
   chandelier.position.set(0, attachY, 0);

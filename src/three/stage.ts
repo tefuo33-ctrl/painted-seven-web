@@ -145,8 +145,8 @@ export function createStage(container: HTMLElement): Stage {
     // взгляд через стол. В кадре все три соперника: напротив — на 40 % высоты, соседи — у краёв
     // кадра; стол занимает нижнюю половину, ближний край уходит за низ экрана.
     // На вертикальном телефоне садимся дальше и выше, чтобы соседи всё равно попадали в кадр.
-    const eye = new THREE.Vector3(0, THREE.MathUtils.lerp(4.0, 8.6, narrow), THREE.MathUtils.lerp(9.4, 12.6, narrow));
-    const look = new THREE.Vector3(0, THREE.MathUtils.lerp(1.93, 0.2, narrow), -0.4);
+    const eye = new THREE.Vector3(0, THREE.MathUtils.lerp(4.6, 9.6, narrow), THREE.MathUtils.lerp(11.7, 15.0, narrow));
+    const look = new THREE.Vector3(0, THREE.MathUtils.lerp(2.42, 0.2, narrow), -0.4);
     const pitch = Math.atan2(look.y - eye.y, eye.z - look.z);
     return {
       target: look,

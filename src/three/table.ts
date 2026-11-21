@@ -5,9 +5,11 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { PALETTE, hex, paintedTexture, smooth } from './gfx';
 
+/** Во сколько раз стол шире модели в натуральную величину (высота стола прежняя). */
+export const TABLE_SCALE = 1.4;
 /** Радиус сукна до внутренней стенки борта (что ближе к краю — уже на борту). */
-export const FELT_RADIUS = 5.0;
-export const TABLE_RADIUS = 5.85;
+export const FELT_RADIUS = 5.0 * TABLE_SCALE;
+export const TABLE_RADIUS = 5.85 * TABLE_SCALE;
 
 /**
  * Воксельный стол из 3D-сессии (assets/3d/export/environment/poker_table.glb, копия в public/models/).
@@ -18,7 +20,7 @@ const TABLE_MODEL_URL = `${import.meta.env.BASE_URL}models/poker_table.glb`;
 const MODEL_RIM_RADIUS = 0.8;
 const MODEL_FELT_HEIGHT = 0.72;
 /** Сколько единиц игры в одном метре 3D-сцены (стол радиусом 0.80 м — радиусом TABLE_RADIUS). */
-export const METRE = TABLE_RADIUS / MODEL_RIM_RADIUS;
+export const METRE = 5.85 / MODEL_RIM_RADIUS;
 /** Пол террасы: сукно на 0.72 м выше пола. */
 export const FLOOR_Y = -MODEL_FELT_HEIGHT * METRE;
 /**
@@ -28,7 +30,7 @@ export const FLOOR_Y = -MODEL_FELT_HEIGHT * METRE;
 export const CHARACTER_SEAT_Y = -0.75;
 const CHAIR_MODEL_URL = `${import.meta.env.BASE_URL}models/chair.glb`;
 /** Расстояние от центра стола до кресла. */
-export const SEAT_DISTANCE = 8.0;
+export const SEAT_DISTANCE = 8.0 + (TABLE_RADIUS - 5.85);
 
 const SEGMENTS = 56;
 
@@ -48,14 +50,15 @@ function turned(profile: [number, number][], material: THREE.Material, segments 
 export function buildTable(): THREE.Group {
   const group = new THREE.Group();
   const fallback = buildProceduralTable();
+  fallback.scale.set(TABLE_SCALE, 1, TABLE_SCALE);
   group.add(fallback);
   new GLTFLoader().load(
     TABLE_MODEL_URL,
     (gltf) => {
       const model = gltf.scene;
-      const scale = TABLE_RADIUS / MODEL_RIM_RADIUS;
-      model.scale.setScalar(scale);
-      model.position.y = -MODEL_FELT_HEIGHT * scale;
+      // Шире в TABLE_SCALE раз, но той же высоты: сукно на y = 0, ножка — на полу террасы.
+      model.scale.set(METRE * TABLE_SCALE, METRE, METRE * TABLE_SCALE);
+      model.position.y = -MODEL_FELT_HEIGHT * METRE;
       model.traverse((object) => {
         const mesh = object as THREE.Mesh;
         if (!mesh.isMesh) return;
@@ -114,13 +117,13 @@ function buildProceduralTable(): THREE.Group {
   group.add(turned([[4.8, 0.0], [4.84, 0.035], [5.0, 0.035]], smooth(PALETTE.goldDark, 60)));
   group.add(
     turned(
-      [[5.0, 0.035], [5.01, 0.2], [5.1, 0.33], [5.3, 0.4], [5.55, 0.37], [5.75, 0.24], [TABLE_RADIUS, 0.05]],
+      [[5.0, 0.035], [5.01, 0.2], [5.1, 0.33], [5.3, 0.4], [5.55, 0.37], [5.75, 0.24], [5.85, 0.05]],
       smooth(0x47201a, 26),
     ),
   );
   group.add(
     turned(
-      [[TABLE_RADIUS, 0.05], [TABLE_RADIUS - 0.03, -0.22], [5.72, -0.34], [5.74, -0.44], [5.5, -0.56], [5.0, -0.68], [0.01, -0.68]],
+      [[5.85, 0.05], [5.82, -0.22], [5.72, -0.34], [5.74, -0.44], [5.5, -0.56], [5.0, -0.68], [0.01, -0.68]],
       wood,
     ),
   );

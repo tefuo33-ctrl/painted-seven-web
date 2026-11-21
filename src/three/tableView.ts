@@ -37,17 +37,17 @@ export interface HandAnchor {
 }
 
 /**
- * Колода — в дальнем левом углу сукна, между картами взятки соседа слева и соседа напротив.
+ * Колода — в центре стола, внутри круга, по которому ложатся карты взятки.
  * Открытый козырь лежит под колодой поперёк, как в настоящей игре: торчат его концы с индексами.
  */
-const DECK_POSITION = new THREE.Vector3(2.45, 0.06, -3.3);
+const DECK_POSITION = new THREE.Vector3(0, 0.06, -0.6);
 const DECK_YAW = -0.12;
 /** Козырь под колодой поперёк и чуть ближе ко мне — видна его половина с индексом. */
-const TRUMP_POSITION = new THREE.Vector3(2.45, 0.03, -2.95);
+const TRUMP_POSITION = new THREE.Vector3(0, 0.03, -0.15);
 /** Круг, по которому ложатся карты взятки: центр чуть дальше от меня, чем центр стола. */
-const TRICK_CENTER_Z = -1.3;
-/** Шаг между картами взятки в ряду. */
-const TRICK_SPACING = 1.5;
+const TRICK_CENTER_Z = -0.5;
+/** Радиус круга взятки: каждая карта — перед тем, кто ею сходил. */
+const TRICK_RADIUS = 2.7;
 /** Половина вертикального угла обзора (тангенс), при которой веер имеет «родной» размер. */
 const HAND_REFERENCE_TAN = Math.tan(THREE.MathUtils.degToRad(37.8));
 /** На каком расстоянии от глаз держится мой веер (ближе ближней плоскости камеры нельзя). */
@@ -140,11 +140,15 @@ export class TableView {
    * как на превью стола из 3D-сессии. Чуть повёрнуты, чтобы не выглядели выложенными по линейке.
    */
   private trickPose(seat: number, order: number, card: Card): Pose {
-    void seat;
+    const spot = SEATS[seat];
     return {
-      position: new THREE.Vector3((order - 1.5) * TRICK_SPACING, 0.09 + order * 0.01, TRICK_CENTER_Z),
-      quaternion: lying(jitter(cardLabel(card)) * 0.5, true),
-      scale: 1.3, // карты взятки крупнее: их должны прочитать все
+      position: new THREE.Vector3(
+        Math.sign(spot.x) * TRICK_RADIUS,
+        0.09 + order * 0.03,
+        TRICK_CENTER_Z + Math.sign(spot.z) * TRICK_RADIUS,
+      ),
+      quaternion: lying(spot.angle + jitter(cardLabel(card)), true),
+      scale: 1.4, // карты взятки крупнее: их должны прочитать все
     };
   }
 
@@ -164,7 +168,7 @@ export class TableView {
       const dx = spot.x / length;
       const dz = spot.z / length;
       const yaw = Math.atan2(dx, dz);
-      const pivot = this.handAnchor(seat)?.position ?? new THREE.Vector3(dx * 5.6, 0.6, dz * 5.6);
+      const pivot = this.handAnchor(seat)?.position ?? new THREE.Vector3(dx * 7.9, 0.6, dz * 7.9);
       const offset = index - (count - 1) / 2;
       // Чем больше карт, тем меньше угол между ними — веер не «разваливается».
       const step = Math.min(0.16, 1.15 / Math.max(1, count - 1));
@@ -215,7 +219,7 @@ export class TableView {
 
   private pilePose(seat: number): Pose {
     return {
-      position: seatPoint(seat, -1.2, 0.1, 3.7),
+      position: seatPoint(seat, -1.2, 0.1, 5.2),
       quaternion: lying(SEATS[seat].angle, false),
       scale: 0.8,
     };

@@ -15,6 +15,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { METRE } from './table';
 
 const BASE = `${import.meta.env.BASE_URL}models/scene/`;
+/**
+ * На сколько метров стол со стульями стоит дальше от балюстрады, чем в сцене Blender:
+ * так с места игрока видны колонны с аркой по бокам, без приближения.
+ */
+const SCENE_SHIFT = 2.4;
 const NEAR_FILES = ['terrace'];
 const FAR_FILES = ['bg_sky', 'bg_sea', 'bg_sun', 'bg_clouds', 'bg_far', 'bg_left_island', 'bg_right_town', 'bg_sailboat'];
 
@@ -23,14 +28,14 @@ function sceneRoot(): { outer: THREE.Group; inner: THREE.Group } {
   const outer = new THREE.Group();
   outer.scale.setScalar(METRE);
   const inner = new THREE.Group();
-  inner.position.set(0, -0.72, -2.3);
+  inner.position.set(0, -0.72, -2.3 - SCENE_SHIFT);
   outer.add(inner);
   return { outer, inner };
 }
 
 /** Точка из метров сцены (glTF) в координаты игры. */
 export function fromScene(x: number, y: number, z: number): THREE.Vector3 {
-  return new THREE.Vector3(x * METRE, (y - 0.72) * METRE, (z - 2.3) * METRE);
+  return new THREE.Vector3(x * METRE, (y - 0.72) * METRE, (z - 2.3 - SCENE_SHIFT) * METRE);
 }
 
 /** Свет заката (из layout.json → lighting_sunset). Солнце — низко над морем, за столом. */
