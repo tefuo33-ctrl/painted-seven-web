@@ -186,12 +186,16 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   }
 
   /**
-   * Камера в розыгрыше (та же машина состояний, что и при раздаче): пока ход не мой — сходил
-   * и жду остальных, или взятку ещё доигрывают до меня — смотрю на стол сверху, мой веер убран.
-   * Дошёл ход до меня — камера возвращается к глазам, и я хожу. Раздачей камера управляет сама.
+   * Камера в розыгрыше (та же машина состояний, что и при раздаче). Наверх она уходит, только
+   * когда я уже бросил карту в эту взятку и жду остальных (и пока взятку забирают). Пока ходят
+   * те, кто передо мной, камера остаётся у глаз — иначе она прыгала бы вверх-вниз.
+   * Новая взятка, где я ещё не ходил, — склейка обратно к глазам. Раздачей камера управляет сама.
    */
-  function followTrickCamera(watchFromTop: boolean): void {
+  function followTrickCamera(game: GameState): void {
     if (ui.dealing || ui.screen !== 'game') return;
+    const iPlayed = game.trick.some((play) => play.player === HUMAN);
+    const watchFromTop =
+      iPlayed && (game.phase === 'trickEnd' || (game.phase === 'playing' && game.turn !== HUMAN));
     const director = stage.director;
     director.speed = gfx.dealSpeed;
     if (watchFromTop) {
@@ -215,7 +219,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     table.selected = ui.selected;
     const state = tableState(game);
     table.sync(state, { pickup: options.pickup });
-    followTrickCamera(state.handAway);
+    followTrickCamera(game);
     const turn = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
     const active = turn === null ? null : seatOf(game, turn);
     marker.show(ui.screen === 'game' ? active : null);
@@ -377,10 +381,12 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     if (game.hands.some((hand) => hand.length !== cards)) console.warn('Раздача: число карт не совпадает с раундом', game.hands);
     if (!dealSkipped) await sleep((DEAL_TIMING.hold * 1000) / speed); // итог раздачи (ракурсы ещё меняются)
     if (!alive()) return;
-    // Игроки берут карты в руки, камера плавно возвращается к глазам игрока.
-    syncTable({ pickup: dealSkipped ? 20 : speed });
+    // Сначала камера плавно возвращается к глазам игрока (карты пока лежат на столе),
+    // и только потом игроки берут карты в руки — мои появляются в веере, когда камера уже внизу.
     if (dealSkipped) stage.director.snap('gameplay');
     else await stage.director.goBack();
+    if (!alive()) return;
+    syncTable({ pickup: dealSkipped ? 20 : speed });
     await waitForCards();
     if (!alive()) return;
     table.revealTrump();

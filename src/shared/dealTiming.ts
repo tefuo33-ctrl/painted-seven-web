@@ -12,13 +12,15 @@ export const DEAL_TIMING = {
   pause: 0.03,
   /** Камера задерживается сверху, чтобы был виден итог раздачи. */
   hold: 1.6,
-  /** Камера возвращается к глазам игрока (игроки в это время берут карты в руки). */
+  /** Камера возвращается к глазам игрока (карты пока лежат на столе). */
   cameraBack: 1.6,
+  /** Камера уже внизу: игроки берут карты в руки, мои появляются в веере. */
+  pickup: 0.9,
 };
 
 /** Сколько длится вся раздача из `totalCards` карт (на всех игроков) при скорости `speed`. */
 export function dealSeconds(totalCards: number, speed = 1): number {
   const t = DEAL_TIMING;
   const perCard = t.lift + t.flight + t.pause;
-  return (t.cameraUp + t.shuffle + totalCards * perCard + t.hold + t.cameraBack) / Math.max(0.1, speed);
+  return (t.cameraUp + t.shuffle + totalCards * perCard + t.hold + t.cameraBack + t.pickup) / Math.max(0.1, speed);
 }
