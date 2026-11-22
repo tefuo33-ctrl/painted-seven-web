@@ -94,6 +94,8 @@ function store(key: string, value: unknown): void {
  */
 const DEAL_SHOTS: ShotName[] = ['top', 'highSide', 'lowFar'];
 const DEAL_SHOT_SECONDS = 3;
+/** Сколько камера ещё держит вид сверху, когда дошёл мой ход, прежде чем вернуться к глазам. */
+const RETURN_DELAY_MS = 500;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -190,10 +192,16 @@ export function startApp(root: HTMLElement, stage: Stage): void {
    * на стол сверху, мой веер убран; дошёл ход до меня — склейка обратно к глазам.
    * Исключение: взятку начинает сосед справа (он ходит прямо передо мной). Тогда камера
    * остаётся у глаз, пока я не брошу карту, — иначе она прыгнула бы вверх и сразу вниз.
-   * Раздачей камера управляет сама.
+   * Дошёл ход до меня — камера ещё полсекунды держит вид сверху (видно, как легла последняя
+   * карта), веер пока убран, и только потом склейка к глазам — без резкого прыжка.
+   * Раздачей камера управляет сама. Возвращает true, пока веер должен оставаться убранным.
    */
-  function followTrickCamera(game: GameState, handAway: boolean): void {
-    if (ui.dealing || ui.screen !== 'game') return;
+  function followTrickCamera(game: GameState, handAway: boolean): boolean {
+    if (ui.dealing || ui.screen !== 'game') {
+      window.clearTimeout(returnTimer);
+      returnTimer = 0;
+      return false;
+    }
     const count = game.playerNames.length;
     const rightNeighbour = (HUMAN + count - 1) % count; // ходит прямо передо мной
     const iPlayed = game.trick.some((play) => play.player === HUMAN);
@@ -203,12 +211,27 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     const director = stage.director;
     director.speed = gfx.dealSpeed;
     if (watchFromTop) {
+      window.clearTimeout(returnTimer);
+      returnTimer = 0;
       // Карты выбрасывают — один спокойный вид сверху, без смены ракурсов (склейкой от глаз).
       if (director.mode === 'gameplay' || director.mode === 'toGameplay') director.cutTo('top');
-    } else if (director.mode === 'top' || director.mode === 'toTop') {
-      director.cutTo('gameplay'); // мой ход — склейка обратно к глазам
+      return false;
     }
+    if (director.mode !== 'top' && director.mode !== 'toTop') return false;
+    // Мой ход: полсекунды ещё смотрим сверху, потом склейка обратно к глазам.
+    if (!returnTimer) {
+      returnTimer = window.setTimeout(() => {
+        returnTimer = 0;
+        if (ui.dealing || ui.screen !== 'game') return;
+        stage.director.cutTo('gameplay');
+        syncTable(); // веер возвращается на экран
+      }, RETURN_DELAY_MS);
+    }
+    return true;
   }
+
+  /** Таймер склейки обратно к глазам, когда дошёл мой ход (0 — не запущен). */
+  let returnTimer = 0;
 
   /** `pickup` — раздача закончилась, игроки берут карты в руки (значение — скорость анимаций). */
   function syncTable(options: { pickup?: number } = {}): void {
@@ -222,8 +245,9 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     lastTrickLength = game.trick.length;
     table.selected = ui.selected;
     const state = tableState(game);
+    // Пока камера ещё держит вид сверху перед моим ходом — веер не показываем.
+    if (followTrickCamera(game, state.handAway)) state.handAway = true;
     table.sync(state, { pickup: options.pickup });
-    followTrickCamera(game, state.handAway);
     const turn = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
     const active = turn === null ? null : seatOf(game, turn);
     marker.show(ui.screen === 'game' ? active : null);
