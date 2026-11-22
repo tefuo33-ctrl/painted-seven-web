@@ -33,12 +33,27 @@ type Look = 'normal' | 'dim' | 'lit' | 'chosen';
 
 let materials: Record<Look, THREE.MeshLambertMaterial> | null = null;
 
+/** Самая большая яркость лица карты (0…1): ниже порога свечения bloom, карта никогда не «горит». */
+const CARD_MAX_LIGHT = 0.84;
+
 function getMaterials(): Record<Look, THREE.MeshLambertMaterial> {
   if (!materials) {
     const map = getCardAtlas();
     // Прозрачные скруглённые углы карты (альфа-канал атласа) не рисуем.
-    const cut = (material: THREE.MeshLambertMaterial) => {
+    // Матовая бумага без бликов: яркость лица карты ограничена (CARD_MAX_LIGHT) ниже порога
+    // свечения картинки (bloom 0.9). Иначе карта, взлетая к лампе или поднимаясь к камере,
+    // пересвечивалась в белое пятно с ореолом и её нельзя было прочитать.
+    const cut = (material: THREE.MeshLambertMaterial, cap = CARD_MAX_LIGHT) => {
       material.alphaTest = 0.5;
+      const previous = material.onBeforeCompile;
+      material.onBeforeCompile = (shader, renderer) => {
+        previous.call(material, shader, renderer);
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <opaque_fragment>',
+          `outgoingLight = min(outgoingLight, vec3(${cap.toFixed(3)}));\n#include <opaque_fragment>`,
+        );
+      };
+      material.customProgramCacheKey = () => `card-matte-${cap}`;
       return material;
     };
     materials = {
@@ -50,10 +65,12 @@ function getMaterials(): Record<Look, THREE.MeshLambertMaterial> {
       // Подсвеченная карта: ею можно ходить.
       lit: cut(
         retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x4a3818, emissiveMap: map, color: 0xeae6de })),
+        0.88, // подсвеченная — чуть ярче обычной, но тоже без ореола
       ),
       // Выбранная карта: светится ярче остальных.
       chosen: cut(
         retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x7a5c20, emissiveMap: map, color: 0xeae6de })),
+        0.88,
       ),
     };
   }
