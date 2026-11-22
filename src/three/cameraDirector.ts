@@ -90,6 +90,7 @@ export class CameraDirector {
   /** Очередь ракурсов для склеек (пусто — держим текущий) и сколько уже держим этот. */
   private playlist: ShotName[] = [];
   private shotTime = 0;
+  private playLength = DEFAULT_DIRECTOR.shotLength;
   private waiters: (() => void)[] = [];
   /** Вызывается при смене режима (например, чтобы заблокировать мышь). */
   onModeChange: (mode: CameraMode) => void = () => {};
@@ -153,8 +154,9 @@ export class CameraDirector {
    * Очередь ракурсов: каждые settings.shotLength секунд — склейка на следующий (по кругу).
    * Первый ракурс включается сразу (если камера уже на ракурсе — склейкой).
    */
-  play(shots: ShotName[]): void {
+  play(shots: ShotName[], seconds = this.settings.shotLength): void {
     this.playlist = shots.slice();
+    this.playLength = seconds;
     this.shotTime = 0;
     if (shots.length && this.state === 'top') this.cut(shots[0]);
     else if (shots.length) this.shot = SHOTS[shots[0]];
@@ -192,7 +194,7 @@ export class CameraDirector {
     // Очередь ракурсов: держим кадр, потом — склейка на следующий.
     if (this.state === 'top' && this.playlist.length > 1) {
       this.shotTime += delta * this.speed;
-      if (this.shotTime >= this.settings.shotLength) {
+      if (this.shotTime >= this.playLength) {
         const index = this.playlist.findIndex((name) => SHOTS[name] === this.shot);
         this.cut(this.playlist[(index + 1) % this.playlist.length]);
       }

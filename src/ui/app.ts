@@ -88,10 +88,12 @@ function store(key: string, value: unknown): void {
   }
 }
 
-/** Ракурсы, с которых смотрим на взятку, пока ход не мой (склейки, как в кино). */
-const TRICK_SHOTS: ShotName[] = ['highSide', 'lowFar', 'top', 'midLeft', 'highFar'];
-/** С какого ракурса начать в следующий раз — для разнообразия. */
-let trickShot = 0;
+/**
+ * Ракурсы во время тасовки и раздачи: склейки, как в кино — строго сверху, сверху сбоку,
+ * низкий по диагонали — и снова по кругу. Сколько секунд держим каждый (при скорости 1).
+ */
+const DEAL_SHOTS: ShotName[] = ['top', 'highSide', 'lowFar'];
+const DEAL_SHOT_SECONDS = 2.4;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -193,14 +195,8 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     const director = stage.director;
     director.speed = gfx.dealSpeed;
     if (watchFromTop) {
-      if (director.mode === 'gameplay' || director.mode === 'toGameplay') {
-        // Как в кино: склейка на ракурс, а пока ждём — склейки на другие ракурсы.
-        // Каждый раз начинаем с другого, чтобы было разнообразно.
-        const order = TRICK_SHOTS.map((_, i) => TRICK_SHOTS[(i + trickShot) % TRICK_SHOTS.length]);
-        trickShot = (trickShot + 1) % TRICK_SHOTS.length;
-        director.cutTo(order[0]);
-        director.play(order);
-      }
+      // Карты выбрасывают — один спокойный вид сверху, без смены ракурсов (склейкой от глаз).
+      if (director.mode === 'gameplay' || director.mode === 'toGameplay') director.cutTo('top');
     } else if (director.mode === 'top' || director.mode === 'toTop') {
       director.cutTo('gameplay'); // мой ход — склейка обратно к глазам
     }
@@ -344,7 +340,11 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     }
     stage.director.speed = gfx.dealSpeed;
     if (dealSkipped) stage.director.snap('top');
-    else await stage.director.goTop();
+    else if (stage.director.mode !== 'top') {
+      await stage.director.goTop('top');
+      // Тасовка и раздача: ракурсы меняются склейками по кругу.
+      stage.director.play(DEAL_SHOTS, DEAL_SHOT_SECONDS);
+    }
     if (!dealShuffled && !dealSkipped) {
       dealShuffled = true;
       playDealSound(0);
@@ -370,11 +370,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     // Проверка: у каждого столько карт, сколько раздала логика.
     const cards = currentRound(game).cards;
     if (game.hands.some((hand) => hand.length !== cards)) console.warn('Раздача: число карт не совпадает с раундом', game.hands);
-    if (!dealSkipped) {
-      // Итог раздачи: склейка на ракурс сверху сбоку, как в кино.
-      stage.director.cutTo('highSide');
-      await sleep((DEAL_TIMING.hold * 1000) / speed);
-    }
+    if (!dealSkipped) await sleep((DEAL_TIMING.hold * 1000) / speed); // итог раздачи (ракурсы ещё меняются)
     if (!alive()) return;
     // Игроки берут карты в руки, камера плавно возвращается к глазам игрока.
     syncTable({ pickup: dealSkipped ? 20 : speed });
