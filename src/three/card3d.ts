@@ -42,17 +42,18 @@ function getMaterials(): Record<Look, THREE.MeshLambertMaterial> {
       return material;
     };
     materials = {
-      // Бумага чуть приглушена, чтобы под фонарём карты не «выгорали» в белое.
-      normal: cut(retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0xc8c4bc }))),
+      // Бумага светлее прежней, но не белая: вместе с более ярким светом над столом карты
+      // на 30 % светлее и при этом не «выгорают» под лампой.
+      normal: cut(retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0xe4e0d8 }))),
       // Затемнённая карта: ею сейчас ходить нельзя.
-      dim: cut(retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0x5a5866 }))),
+      dim: cut(retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0x6c6a7c }))),
       // Подсвеченная карта: ею можно ходить.
       lit: cut(
-        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x4a3818, emissiveMap: map, color: 0xd8d4cc })),
+        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x4a3818, emissiveMap: map, color: 0xeae6de })),
       ),
       // Выбранная карта: светится ярче остальных.
       chosen: cut(
-        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x7a5c20, emissiveMap: map, color: 0xd8d4cc })),
+        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x7a5c20, emissiveMap: map, color: 0xeae6de })),
       ),
     };
   }
