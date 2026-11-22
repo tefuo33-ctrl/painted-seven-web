@@ -62,6 +62,24 @@ describe('Режиссёр камеры', () => {
     expect(jumps).toBe(3); // сверху → сбоку → низкий → снова сверху
   });
 
+  it('не режет, если новый ракурс не успеет простоять полные 3 секунды до конца', () => {
+    // Раздача ещё на 4.5 с: через 3 с осталось бы 1.5 с — склейки нет.
+    const short = new CameraDirector();
+    short.cutTo('top');
+    short.play(['top', 'highSide', 'lowFar'], 3, 4.5);
+    const shortPitches = new Set<number>();
+    run(short, 4.5, (camera) => shortPitches.add(pitch(camera)));
+    expect(shortPitches.size).toBe(1);
+
+    // Раздача ещё на 6.5 с: через 3 с осталось 3.5 — одна склейка; через 6 с — 0.5, больше не режем.
+    const longer = new CameraDirector();
+    longer.cutTo('top');
+    longer.play(['top', 'highSide', 'lowFar'], 3, 6.5);
+    const longerPitches = new Set<number>();
+    run(longer, 6.5, (camera) => longerPitches.add(pitch(camera)));
+    expect(longerPitches.size).toBe(2);
+  });
+
   it('один ракурс без очереди не меняется', () => {
     const director = new CameraDirector();
     director.cutTo('top');

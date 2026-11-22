@@ -91,6 +91,8 @@ export class CameraDirector {
   private playlist: ShotName[] = [];
   private shotTime = 0;
   private playLength = DEFAULT_DIRECTOR.shotLength;
+  /** Сколько ещё продлится то, что снимаем (секунды при скорости 1); Infinity — неизвестно. */
+  private playLeft = Infinity;
   private waiters: (() => void)[] = [];
   /** Вызывается при смене режима (например, чтобы заблокировать мышь). */
   onModeChange: (mode: CameraMode) => void = () => {};
@@ -151,12 +153,14 @@ export class CameraDirector {
   }
 
   /**
-   * Очередь ракурсов: каждые settings.shotLength секунд — склейка на следующий (по кругу).
-   * Первый ракурс включается сразу (если камера уже на ракурсе — склейкой).
+   * Очередь ракурсов: каждые `seconds` секунд — склейка на следующий (по кругу).
+   * `total` — сколько ещё продлится сцена: склейка бывает, только если новый ракурс
+   * успеет простоять полные `seconds` до конца. Первый ракурс включается сразу.
    */
-  play(shots: ShotName[], seconds = this.settings.shotLength): void {
+  play(shots: ShotName[], seconds = this.settings.shotLength, total = Infinity): void {
     this.playlist = shots.slice();
     this.playLength = seconds;
+    this.playLeft = total;
     this.shotTime = 0;
     if (shots.length && this.state === 'top') this.cut(shots[0]);
     else if (shots.length) this.shot = SHOTS[shots[0]];
@@ -191,12 +195,18 @@ export class CameraDirector {
         this.release();
       }
     }
-    // Очередь ракурсов: держим кадр, потом — склейка на следующий.
+    // Очередь ракурсов: держим кадр, потом — склейка на следующий. Но только если следующий
+    // ракурс успеет простоять целиком; иначе досиживаем на текущем, чтобы камера не дёргалась.
     if (this.state === 'top' && this.playlist.length > 1) {
       this.shotTime += delta * this.speed;
+      this.playLeft -= delta * this.speed;
       if (this.shotTime >= this.playLength) {
-        const index = this.playlist.findIndex((name) => SHOTS[name] === this.shot);
-        this.cut(this.playlist[(index + 1) % this.playlist.length]);
+        if (this.playLeft >= this.playLength) {
+          const index = this.playlist.findIndex((name) => SHOTS[name] === this.shot);
+          this.cut(this.playlist[(index + 1) % this.playlist.length]);
+        } else {
+          this.playlist = []; // до конца осталось меньше одного ракурса — больше не режем
+        }
       }
     }
     if (this.progress <= 0) return; // обычный вид игрока — ничего не трогаем

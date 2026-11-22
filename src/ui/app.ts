@@ -93,7 +93,7 @@ function store(key: string, value: unknown): void {
  * низкий по диагонали — и снова по кругу. Сколько секунд держим каждый (при скорости 1).
  */
 const DEAL_SHOTS: ShotName[] = ['top', 'highSide', 'lowFar'];
-const DEAL_SHOT_SECONDS = 2.4;
+const DEAL_SHOT_SECONDS = 3;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -342,8 +342,13 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     if (dealSkipped) stage.director.snap('top');
     else if (stage.director.mode !== 'top') {
       await stage.director.goTop('top');
-      // Тасовка и раздача: ракурсы меняются склейками по кругу.
-      stage.director.play(DEAL_SHOTS, DEAL_SHOT_SECONDS);
+      // Тасовка и раздача: ракурсы меняются склейками по кругу, не чаще раза в 3 секунды.
+      // Режиссёр знает, сколько ещё продлится раздача, и не режет, если новый ракурс не успеет.
+      const game = ui.game;
+      const total = game ? currentRound(game).cards * game.playerNames.length : 0;
+      const t = DEAL_TIMING;
+      const left = (dealShuffled ? 0 : t.shuffle) + total * (t.lift + t.flight + t.pause) + t.hold;
+      stage.director.play(DEAL_SHOTS, DEAL_SHOT_SECONDS, left);
     }
     if (!dealShuffled && !dealSkipped) {
       dealShuffled = true;
