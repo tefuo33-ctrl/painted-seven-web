@@ -211,12 +211,13 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     const watchFromTop = handAway && !rightLeads;
     const director = stage.director;
     director.speed = gfx.dealSpeed;
-    // Игрок сам включил вид сверху (кнопка внизу справа): держим его, пока не выключит; веер убран.
+    // Игрок сам включил вид сверху (кнопка внизу справа): держим его, пока не выключит.
+    // Веер — маленький у нижнего края: на свой ход можно заказывать и ходить прямо отсюда.
     if (ui.topView) {
       window.clearTimeout(returnTimer);
       returnTimer = 0;
       if (director.mode === 'gameplay' || director.mode === 'toGameplay') director.cutTo('top');
-      return true;
+      return false;
     }
     if (watchFromTop) {
       window.clearTimeout(returnTimer);
@@ -263,6 +264,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     }
     lastTrickLength = game.trick.length;
     table.selected = ui.selected;
+    table.compactHand = ui.topView;
     const state = tableState(game);
     // Пока камера ещё держит вид сверху перед моим ходом — веер не показываем.
     if (followTrickCamera(game, state.handAway)) state.handAway = true;
@@ -381,12 +383,16 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   let dealShuffled = false;
   /** Первая раздача с тех пор, как сели за стол: только в ней камера плавно «садится». */
   let firstDeal = true;
+  /** Перед раздачей игрок смотрел на стол сверху: после раздачи остаёмся сверху. */
+  let keepTopView = false;
 
   /** PREPARATION + CAMERA TRANSITION: блокируем всё, камера уходит наверх, раздающий тасует. */
   async function dealIntro(): Promise<void> {
     if (!ui.dealing) {
       ui.dealing = true;
-      ui.topView = false; // раздачей камера управляет сама
+      // Раздачей камера управляет сама; если игрок смотрел сверху — после раздачи вид сверху вернётся.
+      keepTopView = ui.topView;
+      ui.topView = false;
       dealSkipped = false;
       dealShuffled = false;
       handOrder = []; // новая раздача — карты в обычном порядке
@@ -435,7 +441,12 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     // Сначала камера возвращается к глазам игрока (карты пока лежат на столе), и только потом
     // игроки берут карты в руки — мои появляются в веере, когда камера уже внизу.
     // Плавно, будто садимся за стол, — только в первой раздаче партии; дальше — склейкой.
-    if (dealSkipped || !firstDeal) stage.director.cutTo('gameplay');
+    if (keepTopView) {
+      // Игрок сам выбрал вид сверху — так и остаёмся (один спокойный ракурс), веер — маленький внизу.
+      stage.director.play(['top']);
+      stage.director.cutTo('top');
+      ui.topView = true;
+    } else if (dealSkipped || !firstDeal) stage.director.cutTo('gameplay');
     else await stage.director.goBack();
     firstDeal = false;
     if (!alive()) return;
@@ -453,6 +464,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     dealSkipped = true;
     ui.dealing = false;
     ui.topView = false;
+    keepTopView = false;
     table.holdForDeal(false);
     stage.director.snap('gameplay');
   }
@@ -828,6 +840,11 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         break;
       case 'skip-deal':
         skipDeal();
+        break;
+      case 'toggle-lamp':
+        gfx.lamp = !gfx.lamp;
+        saveGfx();
+        render();
         break;
       case 'toggle-top-view':
         // Стол сверху ⇄ мои карты. Выключил — камера сразу к глазам (если сейчас мой ход

@@ -3,15 +3,20 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { glow, paintedTexture, seededRandom, smooth } from './gfx';
+import { gfx, glow, paintedTexture, seededRandom, smooth } from './gfx';
 import { AMBIENT_COLOR, LANTERN_POSITIONS, SUN_COLOR, SUN_DIRECTION, loadSunsetScene } from './sunset';
 import { FLOOR_Y, METRE } from './table';
 
 const SEA_Y = -11;
 const EDGE_Z = -13; // край террасы с балюстрадой
 const CEILING_Y = 12.5;
-/** Яркость света под люстрой и у свечей (подобрана так, чтобы сукно было светлым, как на превью). */
-const MAIN_LIGHT = 52; // на 30 % ярче прежних 40: стол и карты светлее
+/** Лампа включена: свет тёплый и ярче. */
+const LAMP_COLOR = new THREE.Color(0xffb35a);
+const LAMP_LIGHT = 64;
+/** Лампа выключена: ровный белый свет над столом (сукно и карты — естественных цветов). */
+const PLAIN_COLOR = new THREE.Color(0xfff6ee);
+const PLAIN_LIGHT = 36;
+/** Огоньки свечей люстры (горят, только когда лампа включена). */
 const CANDLE_LIGHT = 3;
 /** Свет сцены заката: солнце, общий свет, небо и фонари на балюстраде. */
 const SUN_LIGHT = 2.2;
@@ -829,12 +834,14 @@ export function buildLocation(scene: THREE.Scene, background: THREE.Scene): Loca
     update(time) {
       // Мерцание пламени: несколько волн разной частоты.
       const flicker = 1 + Math.sin(time * 9.1) * 0.04 + Math.sin(time * 23.7) * 0.03 + Math.sin(time * 3.3) * 0.05;
-      light.intensity = MAIN_LIGHT * flicker;
+      // Лампа выключена — ровный белый свет без мерцания; включена — тёплый, ярче, мерцает.
+      light.color.copy(gfx.lamp ? LAMP_COLOR : PLAIN_COLOR);
+      light.intensity = gfx.lamp ? LAMP_LIGHT * flicker : PLAIN_LIGHT;
       lanterns.forEach((lantern, i) => {
         lantern.intensity = LANTERN_LIGHT * (1 + Math.sin(time * (6 + i) + i * 3) * 0.06);
       });
       candles.forEach((candle, i) => {
-        candle.intensity = CANDLE_LIGHT * (1 + Math.sin(time * (7 + i) + i) * 0.1);
+        candle.intensity = gfx.lamp ? CANDLE_LIGHT * (1 + Math.sin(time * (7 + i) + i) * 0.1) : 0;
       });
       flames.forEach((flame, i) => {
         const own = 1 + Math.sin(time * (8 + i) + i * 2) * 0.08;

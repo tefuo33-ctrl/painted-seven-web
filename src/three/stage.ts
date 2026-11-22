@@ -228,7 +228,8 @@ export function createStage(container: HTMLElement): Stage {
     const height = Math.max(1, container.clientHeight);
     // Считаем в настоящих пикселях экрана: у телефонов их в 2–3 раза больше, чем «точек» в браузере.
     // На «низком» качестве плотность экрана не учитываем — картинка мельче, зато быстрее.
-    const ratio = gfx.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2);
+    // На телефоне — тоже до 2: при 1.5 мелкие индексы карт расплывались и глаза уставали.
+    const ratio = gfx.quality === 'low' ? 1 : Math.min(window.devicePixelRatio || 1, 2);
     const density = ratio / gfx.pixelScale;
     renderer.domElement.style.imageRendering = gfx.pixelScale > 1.5 ? 'pixelated' : 'auto';
     const renderWidth = Math.max(200, Math.round(width * density));
@@ -314,7 +315,14 @@ export function createStage(container: HTMLElement): Stage {
         }
       }
       const showChandelier = director.height < 0.35;
-      for (const object of chandeliers) object.visible = showChandelier;
+      // На вертикальном телефоне глаза игрока на 5 единиц выше, чем на компьютере, — люстру
+      // поднимаем на столько же: она висит над столом так же, как на компьютере, и не закрывает обзор.
+      const lift = THREE.MathUtils.clamp((1.3 - camera.aspect) / 0.8, 0, 1) * 5.0;
+      for (const object of chandeliers) {
+        object.visible = showChandelier;
+        if (object.userData.baseY === undefined) object.userData.baseY = object.position.y;
+        object.position.y = (object.userData.baseY as number) + lift;
+      }
     }
     if (view === 'wardrobe') {
       // Свет держится у камеры, чтобы персонаж был хорошо виден с любой стороны.

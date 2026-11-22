@@ -49,6 +49,7 @@ export function tableStateFromGame(game: GameState, me: number): TableState {
     trumpSeat: game.trumpCard && game.dealt && currentRoundCards(game) * count >= 36 ? seatOf(game.dealer) : null,
     trump: game.trump,
     playable: myTurn ? legalCardsFor(game, me) : [],
+    bidding: game.phase === 'bidding' && game.turn === me,
     taken: bySeat((player) => game.taken[player] ?? 0, 0),
     deckSeat: seatOf(game.dealt ? (game.dealer + 1) % count : game.dealer),
     // В розыгрыше, пока ходят другие, мой веер убран; на мой ход (и при заказе) он на экране.

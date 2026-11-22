@@ -22,6 +22,11 @@ export const gfx = {
   vignette: 0.5,
   /** Скорость раздачи (камера сверху и полёт карт): 1 — обычная, больше — быстрее. */
   dealSpeed: 1,
+  /**
+   * Лампа над столом: выключена — стол и карты освещены ровным белым светом;
+   * включена — свет тёплый, жёлтый и ярче.
+   */
+  lamp: false,
 };
 
 /** Варианты скорости раздачи в настройках. */
@@ -43,6 +48,7 @@ export function loadGfx(): void {
     if (typeof saved.bloom === 'boolean') gfx.bloom = saved.bloom;
     if (typeof saved.pixelScale === 'number' && saved.pixelScale >= 1 && saved.pixelScale <= 5) gfx.pixelScale = saved.pixelScale;
     if (typeof saved.dealSpeed === 'number' && DEAL_SPEEDS.includes(saved.dealSpeed)) gfx.dealSpeed = saved.dealSpeed;
+    if (typeof saved.lamp === 'boolean') gfx.lamp = saved.lamp;
   } catch {
     // хранилище недоступно — остаются настройки по умолчанию
   }
@@ -50,8 +56,8 @@ export function loadGfx(): void {
 
 export function saveGfx(): void {
   try {
-    const { quality, music, musicVolume, sfx, sfxVolume, bloom, pixelScale, dealSpeed } = gfx;
-    localStorage.setItem(GFX_KEY, JSON.stringify({ quality, music, musicVolume, sfx, sfxVolume, bloom, pixelScale, dealSpeed }));
+    const { quality, music, musicVolume, sfx, sfxVolume, bloom, pixelScale, dealSpeed, lamp } = gfx;
+    localStorage.setItem(GFX_KEY, JSON.stringify({ quality, music, musicVolume, sfx, sfxVolume, bloom, pixelScale, dealSpeed, lamp }));
   } catch {
     // не страшно
   }

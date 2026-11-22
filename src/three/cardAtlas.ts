@@ -375,12 +375,15 @@ function paintAtlas(ctx: CanvasRenderingContext2D): void {
 export function getCardAtlas(): THREE.Texture {
   if (atlas) return atlas;
   if (sheet) {
-    // Пиксель-арт: без сглаживания и без мип-уровней — пиксели остаются чёткими.
+    // Пиксель-арт: вблизи — без сглаживания, пиксели остаются чёткими. Издалека (карта меньше
+    // своей картинки — на телефоне почти всегда) — с мип-уровнями: без них линии рвались
+    // и рябили, карты сливались между собой.
     const texture = new THREE.Texture(sheet);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.magFilter = THREE.NearestFilter;
-    texture.minFilter = THREE.NearestFilter;
-    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.generateMipmaps = true;
+    texture.anisotropy = 8;
     texture.needsUpdate = true;
     atlas = texture;
     return texture;

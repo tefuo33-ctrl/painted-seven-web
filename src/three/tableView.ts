@@ -26,6 +26,8 @@ export interface TableState {
   trump: Suit | null;
   /** Карты моей руки, которыми можно ходить (пусто, если ход не мой). */
   playable: Card[];
+  /** Сейчас мой заказ: все карты руки подсвечены, чтобы их было удобно посчитать. */
+  bidding: boolean;
   /** Мой веер убран вниз за экран: идёт розыгрыш, а ход не мой. */
   handAway: boolean;
   /** У чьего места лежит колода: у раздающего, а когда карты розданы — у следующего раздающего. */
@@ -106,6 +108,11 @@ export class TableView {
   readonly cards: Card3D[] = [];
   /** Какая карта моей руки сейчас выбрана. */
   selected: string | null = null;
+  /**
+   * Вид сверху: веер маленький и прижат к нижнему краю экрана — стол виден целиком,
+   * а ходить можно, не возвращаясь к своим глазам.
+   */
+  compactHand = false;
   /** Над какой картой моей руки сейчас указатель мыши. */
   hovered: string | null = null;
   /** Где соперники держат карты (задаётся, когда персонажи рассажены). */
@@ -262,18 +269,30 @@ export class TableView {
       const halfWidth = halfHeight * camera.aspect;
       // Карты веера — одной и той же доли высоты экрана при любом угле обзора
       // (на широком экране обзор уже, и без этого веер разрастался на полстола).
-      const unit = halfHeight / (HAND_REFERENCE_TAN * distance);
-      const spacing = count > 1 ? Math.min(0.78 * unit, (halfWidth * 2 - 1.3 * unit) / (count - 1)) : 0;
+      let unit = halfHeight / (HAND_REFERENCE_TAN * distance);
+      // В виде сверху веер в 0.6 раза меньше, чтобы не закрывать стол.
+      if (this.compactHand) unit *= 0.6;
+      // Карты не должны «слипаться»: у каждой видна полоска не уже 0.42 ширины карты
+      // (с уголком ранга и масти). На узком экране веер для этого чуть уменьшается.
+      if (count > 1) unit = Math.min(unit, (halfWidth * 2 * 0.96) / (0.42 * (count - 1) + 1.1));
+      const spacing = count > 1 ? Math.min(0.78 * unit, (halfWidth * 2 * 0.96 - 1.1 * unit) / (count - 1)) : 0;
       const offset = index - (count - 1) / 2;
       const raised =
         ((playable ? 0.14 : 0) + (this.hovered === label && playable ? 0.14 : 0) + (this.selected === label ? 0.36 : 0)) * unit;
-      // Веер в нижней части экрана, на 10–20 % выше нижнего края, под рядом взятки.
+      // Веер в нижней части экрана, на 10–20 % выше нижнего края, под рядом взятки;
+      // в виде сверху — у самого нижнего края.
       // Не мой ход в розыгрыше — веер уезжает вниз за край экрана, мой ход — возвращается.
       const away = this.handAway ? halfHeight * 0.85 : 0;
+      const baseY = this.compactHand ? -halfHeight + 0.9 * unit : -halfHeight * 0.62;
+      // Каждая следующая карта заметно ближе к глазам, чтобы соседние карты не прорезали
+      // друг друга (поднятая карта наклонена и иначе «втыкалась» в соседнюю). Чтобы на экране
+      // это не было видно, ближнюю карту во столько же раз уменьшаем и сдвигаем к центру.
+      const depth = index * 0.12;
+      const near = (distance - depth) / distance;
       const local = new THREE.Vector3(
-        offset * spacing,
-        -halfHeight * 0.62 - offset * offset * 0.012 * unit + raised - away,
-        -distance + index * 0.02,
+        offset * spacing * near,
+        (baseY - offset * offset * 0.012 * unit + raised - away) * near,
+        -distance + depth,
       ).multiplyScalar(shrink);
       local.x /= zoom;
       local.y /= zoom;
@@ -281,7 +300,7 @@ export class TableView {
         position: local.applyMatrix4(camera.matrixWorld),
         quaternion: camera.quaternion.clone().multiply(quat(AXIS_Z, -offset * 0.035)).multiply(quat(AXIS_X, -0.22)),
         // Свой веер — прежнего размера на экране (карты стали крупнее, а веер и так близко).
-        scale: ((this.selected === label ? 1.08 : 1) * shrink * unit) / zoom / CARD_SIZE,
+        scale: ((this.selected === label ? 1.08 : 1) * shrink * unit * near) / zoom / CARD_SIZE,
       };
     };
   }
@@ -469,7 +488,8 @@ export class TableView {
             face: card,
             pose: this.myHandPose(label, index, hand.length, myTurn && playable),
             move,
-            look: !myTurn ? 'normal' : !playable ? 'dim' : this.selected === label ? 'chosen' : 'lit',
+            // При моём заказе подсвечены все карты: по ним считаю, сколько взяток возьму.
+            look: state.bidding ? 'lit' : !myTurn ? 'normal' : !playable ? 'dim' : this.selected === label ? 'chosen' : 'lit',
             prefer: 'd:',
           });
         } else {

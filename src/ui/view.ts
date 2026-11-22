@@ -388,6 +388,9 @@ function topbarHtml(ui: UiState, game: GameState): string {
     </div>
     <div class="top-buttons">
       ${ui.viewChanged ? `<button class="btn small" data-action="reset-view" title="${t('hud.resetView')}">⟲</button>` : ''}
+      <button class="btn small lamp-btn${gfx.lamp ? ' lamp-on' : ''}" data-action="toggle-lamp" title="${t(
+        gfx.lamp ? 'hud.lampOff' : 'hud.lampOn',
+      )}" aria-pressed="${gfx.lamp}">💡</button>
       <button class="btn small" data-action="open-sheet">${t('hud.sheet')}</button>
       <button class="btn small" data-action="open-quit" aria-label="${t('hud.menu')}">☰</button>
     </div>
@@ -484,7 +487,7 @@ function hudHtml(ui: UiState, game: GameState): string {
   for (let player = 1; player < game.playerNames.length; player++) plates += plateHtml(game, player);
   const hasJoker = game.hands[HUMAN]?.some(isJoker) ?? false;
   const kicked = game.autoPlay[HUMAN] ? `<p class="kicked">${t('hud.kicked')}</p>` : '';
-  return `<div class="hud${ui.dealing ? ' dealing' : ''}">
+  return `<div class="hud${ui.dealing ? ' dealing' : ''}${ui.topView ? ' top-view' : ''}">
     ${topbarHtml(ui, game)}
     ${
       ui.dealing

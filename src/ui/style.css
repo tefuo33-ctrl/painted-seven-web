@@ -918,3 +918,135 @@ body.scene-only #app {
     bottom: 29%;
   }
 }
+
+/* ---------- Лампа над столом ---------- */
+
+.btn.lamp-btn {
+  min-width: 36px;
+  filter: grayscale(1) brightness(0.8);
+}
+
+.btn.lamp-btn.lamp-on {
+  filter: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 10px rgba(255, 196, 90, 0.6);
+}
+
+/* ---------- Телефон: подсказки и заказ не закрывают стол ---------- */
+
+@media (max-width: 719px), (max-height: 500px) {
+  /* Подсказка — тонкой строкой под верхней панелью, а не посреди стола. */
+  .bottom .status-text {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 46px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100% - 24px);
+    padding: 2px 8px;
+    font-size: 12px;
+    background: rgba(20, 16, 22, 0.7);
+  }
+
+  /* Моя табличка и бейдж покера — в левом нижнем углу, мелко. */
+  .bottom .mine-row {
+    position: fixed;
+    left: 8px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .plate {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
+
+  .plate.mine {
+    gap: 6px;
+    margin: 0;
+  }
+
+  .joker-badge {
+    font-size: 11px;
+    padding: 2px 6px;
+  }
+
+  /* Заказ — одним рядом маленьких кнопок над веером. */
+  .bottom {
+    bottom: 36%;
+    gap: 4px;
+  }
+
+  .bids {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .btn.bid {
+    min-width: 30px;
+    min-height: 34px;
+    padding: 2px 0;
+    font-size: 15px;
+    background: rgba(20, 16, 22, 0.8);
+  }
+
+  .bid-note {
+    font-size: 11px;
+    margin: 0;
+  }
+
+  .corner-btn {
+    font-size: 12px;
+    padding: 4px 8px;
+  }
+
+  .kicked {
+    font-size: 12px;
+  }
+
+  /* Верхняя панель — компактнее: раунд и козырь в одну строку, карта козыря мельче. */
+  .top-left {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .round-info {
+    padding: 3px 7px;
+    font-size: 12px;
+  }
+
+  .round-info .mode {
+    font-size: 11px;
+  }
+
+  .trump-box {
+    gap: 5px;
+    padding: 3px 7px 3px 4px;
+    font-size: 12px;
+  }
+
+  .trump-card {
+    width: 24px;
+    height: 36px;
+  }
+
+  .top-buttons .btn.small {
+    min-height: 30px;
+    padding: 3px 8px;
+    font-size: 12px;
+  }
+}
+
+/* Вид сверху: веер маленький у нижнего края — заказ и подсказки ниже, стол открыт. */
+.hud.top-view .bottom {
+  bottom: 17%;
+}
+
+/* Вертикальный телефон: верхняя панель в две строки — подсказка под ней. */
+@media (max-width: 719px) and (orientation: portrait) {
+  .bottom .status-text {
+    top: calc(env(safe-area-inset-top, 0px) + 78px);
+  }
+}
