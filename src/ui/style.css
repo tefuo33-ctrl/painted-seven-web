@@ -1086,3 +1086,25 @@ body.scene-only #app {
     display: none;
   }
 }
+
+/* Терраса ещё грузится: значок внизу по центру. */
+.scene-loading {
+  position: absolute;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  border: 3px solid rgba(255, 220, 160, 0.25);
+  border-top-color: var(--gold, #d9b44a);
+  border-radius: 50%;
+  animation: scene-loading 0.8s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes scene-loading {
+  to {
+    transform: rotate(360deg);
+  }
+}

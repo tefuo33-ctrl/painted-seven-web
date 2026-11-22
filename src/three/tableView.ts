@@ -7,7 +7,7 @@ import { type Card, type Suit, cardLabel, isJoker } from '../engine';
 import { CARD_SIZE, Card3D, type MoveOptions, type Pose, type PoseSource } from './card3d';
 import { PALETTE, glow } from './gfx';
 import { GoldBars } from './goldBars';
-import { DEAL_TIMING } from '../shared/dealTiming';
+import { DEAL_TIMING, dealInterval } from '../shared/dealTiming';
 import type { Stage } from './stage';
 import { SEATS, seatPoint } from './table';
 
@@ -72,7 +72,6 @@ const ZONE_SPACING = 0.42;
 /** Время одной карты при скорости 1 (секунды): отделить от колоды, полёт, пауза после приземления. */
 const DEAL_LIFT = DEAL_TIMING.lift;
 const DEAL_FLIGHT = DEAL_TIMING.flight;
-const DEAL_PAUSE = DEAL_TIMING.pause;
 
 /** Скорость анимаций раздачи (1 — обычная). Задаёт игра из настроек. */
 export interface DealOptions {
@@ -387,6 +386,15 @@ export class TableView {
       return card;
     };
 
+    // Чем больше карт, тем чаще они вылетают (следующая — не дожидаясь, пока ляжет предыдущая):
+    // вся раздача укладывается в пару секунд даже вчетвером по 9 карт.
+    const totalCards = seats.reduce((sum, seat) => sum + state.hands[seat].length, 0);
+    const interval = dealInterval(totalCards);
+    const flights: Promise<void>[] = [];
+    // Вылеты — по часам от начала раздачи: неточность таймеров не накапливается от карты к карте.
+    const started = performance.now();
+    let launched = 0;
+
     for (let round = 0; round < perSeat; round++) {
       for (const seat of seats) {
         if (round >= state.hands[seat].length) continue;
@@ -413,21 +421,28 @@ export class TableView {
           position: card.mesh.position.clone().add(new THREE.Vector3(0, 0.32, 0)),
           quaternion: lying(THREE.MathUtils.lerp(this.deckSpot.yaw, SEATS[seat].angle, 0.25), false),
         };
-        await card.moveTo(lift, { duration: DEAL_LIFT / speed });
-        if (options.skipped()) {
-          card.place(target);
-          continue;
-        }
-        // 2) Полёт дугой к зоне игрока, с лёгким поворотом и тенью на сукне.
-        this.flying = card;
-        await card.moveTo(target, { duration: DEAL_FLIGHT / speed, arc: 0.55, spin: 0.35 * (seat % 2 === 0 ? 1 : -1) });
-        this.flying = null;
-        this.flyShadow.visible = false;
-        options.onLand?.();
-        // 3) Короткая пауза, как у живого раздающего.
-        if (!options.skipped()) await this.pause(DEAL_PAUSE / speed);
+        const flight = async () => {
+          await card.moveTo(lift, { duration: DEAL_LIFT / speed });
+          if (options.skipped()) {
+            card.place(target);
+            return;
+          }
+          // 2) Полёт дугой к зоне игрока, с лёгким поворотом и тенью на сукне.
+          this.flying = card;
+          await card.moveTo(target, { duration: DEAL_FLIGHT / speed, arc: 0.55, spin: 0.35 * (seat % 2 === 0 ? 1 : -1) });
+          if (this.flying === card) {
+            this.flying = null;
+            this.flyShadow.visible = false;
+          }
+          options.onLand?.();
+        };
+        flights.push(flight());
+        // 3) Следующая карта — через интервал (карт много — интервал короче).
+        launched++;
+        if (!options.skipped()) await this.pause(Math.max(0, started / 1000 + (launched * interval) / speed - performance.now() / 1000));
       }
     }
+    await Promise.all(flights);
 
     // Остаток колоды выравниваем, а в остальных раундах козырь открывается с верха колоды.
     if (state.trumpCard && state.trumpSeat === null) this.layTrump(state.trumpCard, options.skipped() ? 0 : 0.15);

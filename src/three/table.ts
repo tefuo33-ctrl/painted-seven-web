@@ -2,7 +2,7 @@
 // Сукно лежит на высоте y = 0, пол террасы — на FLOOR_Y.
 
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createLoader } from './loader';
 import { PALETTE, hex, paintedTexture, smooth } from './gfx';
 
 /** Во сколько раз стол шире модели в натуральную величину (высота стола прежняя). */
@@ -52,7 +52,7 @@ export function buildTable(): THREE.Group {
   const fallback = buildProceduralTable();
   fallback.scale.set(TABLE_SCALE, 1, TABLE_SCALE);
   group.add(fallback);
-  new GLTFLoader().load(
+  createLoader().load(
     TABLE_MODEL_URL,
     (gltf) => {
       const model = gltf.scene;
@@ -265,7 +265,7 @@ export function buildChairs(): { group: THREE.Group; own: THREE.Group } {
     places.push(place);
     if (index === 0) own = place;
   });
-  new GLTFLoader().load(
+  createLoader().load(
     CHAIR_MODEL_URL,
     (gltf) => {
       gltf.scene.traverse((object) => {

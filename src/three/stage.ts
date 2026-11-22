@@ -65,6 +65,13 @@ export interface Stage {
   applySettings(): void;
   /** Добавить функцию, которая вызывается каждый кадр (time и delta — в секундах). */
   onFrame(callback: (time: number, delta: number) => void): void;
+  /**
+   * Заранее подготовить для видеокарты (скомпилировать шейдеры, загрузить текстуры) предметы,
+   * которые появятся позже: иначе первый кадр с ними подвисает на треть секунды.
+   */
+  warmUp(objects: THREE.Object3D[]): Promise<void>;
+  /** Окружение (терраса, небо, люстра) загрузилось. */
+  ready: Promise<void>;
 }
 
 /** Точка, вокруг которой стоит персонаж в «Гардеробе». */
@@ -92,6 +99,11 @@ export function createStage(container: HTMLElement): Stage {
   const background = new THREE.Scene();
   const backgroundCamera = new THREE.PerspectiveCamera(50, 1, 20, 60000);
   const location = buildLocation(scene, background);
+  // Пока грузится терраса — маленький крутящийся значок внизу экрана.
+  const loading = document.createElement('div');
+  loading.className = 'scene-loading';
+  container.appendChild(loading);
+  void location.ready.finally(() => loading.remove());
   // Стол со стульями стоит на террасе наискосок: всё окружение (терраса, небо, море, город)
   // повёрнуто вокруг стола, и с места игрока взгляд уходит чуть больше на город справа.
   location.group.rotation.y = VIEW_TURN;
@@ -220,7 +232,10 @@ export function createStage(container: HTMLElement): Stage {
   }
 
   // В «Гардеробе» персонаж стоит спиной к закату — подсвечиваем его спереди и сбоку.
+  // Пока он не нужен, он выключен совсем (visible = false): каждый точечный свет, даже тёмный,
+  // считается в шейдере для каждой точки экрана.
   const wardrobeLight = new THREE.PointLight(0xffe2b8, 0, 60, 1);
+  wardrobeLight.visible = false;
   scene.add(wardrobeLight);
 
   function resize(): void {
@@ -267,8 +282,8 @@ export function createStage(container: HTMLElement): Stage {
     bloom.strength = gfx.bloomStrength;
     vignette.enabled = gfx.vignette > 0 && high;
     vignette.uniforms.uStrength.value = gfx.vignette;
-    renderer.shadowMap.enabled = high;
-    key.castShadow = high;
+    renderer.shadowMap.enabled = high && !mobile;
+    key.castShadow = high && !mobile;
     resize();
   }
 
@@ -373,6 +388,7 @@ export function createStage(container: HTMLElement): Stage {
     setView(next) {
       view = next;
       wardrobeLight.intensity = next === 'wardrobe' ? 26 : 0;
+      wardrobeLight.visible = next === 'wardrobe';
       applyView(true);
       resize();
     },
@@ -386,5 +402,26 @@ export function createStage(container: HTMLElement): Stage {
     onFrame(callback) {
       callbacks.push(callback);
     },
+    async warmUp(objects) {
+      const holder = new THREE.Group();
+      holder.add(...objects);
+      scene.add(holder);
+      try {
+        await renderer.compileAsync(scene, camera);
+        for (const object of objects) {
+          object.traverse((child) => {
+            const material = (child as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+            for (const m of Array.isArray(material) ? material : material ? [material] : []) {
+              for (const value of Object.values(m)) if ((value as THREE.Texture)?.isTexture) renderer.initTexture(value as THREE.Texture);
+            }
+          });
+        }
+      } catch (error) {
+        console.warn('Не удалось заранее подготовить шейдеры', error);
+      } finally {
+        scene.remove(holder);
+      }
+    },
+    ready: location.ready,
   };
 }

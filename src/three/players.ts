@@ -30,6 +30,7 @@ export class Players {
   seat(skins: (Skin | null)[]): void {
     for (const character of this.characters.values()) {
       this.stage.scene.remove(character.group);
+      disposeObject(character.group);
     }
     this.characters.clear();
     skins.forEach((skin, seat) => {
@@ -44,6 +45,17 @@ export class Players {
       this.characters.set(seat, character);
       this.stage.scene.add(character.group);
     });
+  }
+
+  /**
+   * Заранее подготовить видеокарту к персонажам (и другим предметам `extra`): шейдеры и текстуры.
+   * Иначе в первую секунду партии игра заметно подвисает.
+   */
+  async warmUp(skin: Skin, extra: THREE.Object3D[] = []): Promise<void> {
+    const sample = new Character(skin);
+    sample.group.position.set(0, -40, 0); // под полом, не видно
+    await this.stage.warmUp([sample.group, ...extra]);
+    disposeObject(sample.group);
   }
 
   clear(): void {
@@ -83,6 +95,7 @@ export class Players {
     if (!skin) {
       if (this.wardrobe) {
         this.stage.scene.remove(this.wardrobe.group);
+        disposeObject(this.wardrobe.group);
       }
       this.wardrobe = null;
       this.stage.setView('table');
@@ -99,4 +112,18 @@ export class Players {
       this.wardrobe.setSkin(skin);
     }
   }
+}
+
+/** Освободить память видеокарты: геометрию, материалы и текстуры предмета. */
+function disposeObject(root: THREE.Object3D): void {
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.geometry.dispose();
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      for (const value of Object.values(material)) if ((value as THREE.Texture)?.isTexture) (value as THREE.Texture).dispose();
+      material.dispose();
+    }
+  });
 }

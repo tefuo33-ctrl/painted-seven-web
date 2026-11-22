@@ -29,13 +29,14 @@ import {
 import { type Language, getLanguage, onLanguageChange, setLanguage, t } from '../i18n';
 import { type Net, clientId, connect, serverUrl } from '../net/client';
 import type { ServerMessage } from '../net/protocol';
-import { DEAL_TIMING } from '../shared/dealTiming';
+import { DEAL_TIMING, dealSpread } from '../shared/dealTiming';
 import { pickBotNames } from '../shared/names';
 import { repaintCardAtlas } from '../three/cardAtlas';
 import { type Skin, randomGender, randomSkin, sanitizeSkin } from '../three/character';
 import type { ShotName } from '../three/cameraDirector';
 import { gfx, saveGfx } from '../three/gfx';
 import { Players } from '../three/players';
+import { Card3D } from '../three/card3d';
 import type { Stage } from '../three/stage';
 import { SEATS } from '../three/table';
 import { seatOfPlayer, skinsBySeat, tableStateFromGame } from '../three/tableState';
@@ -131,6 +132,17 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   }
   const marker = new TurnMarker(stage);
   const players = new Players(stage);
+  // Пока открыто меню, заранее готовим видеокарту к персонажам и картам (все виды подсветки):
+  // иначе первая секунда партии заметно подвисает.
+  void stage.ready.then(() => {
+    const samples = (['normal', 'dim', 'lit', 'chosen'] as const).map((look) => {
+      const card = new Card3D();
+      card.setLook(look);
+      card.mesh.position.set(0, -40, 0);
+      return card.mesh;
+    });
+    return players.warmUp(ui.profile.skin, samples);
+  });
   table.handAnchor = (seat) => {
     const position = players.handPosition(seat);
     return position ? { position } : null;
@@ -432,7 +444,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       const game = ui.game;
       const total = game ? currentRound(game).cards * game.playerNames.length : 0;
       const t = DEAL_TIMING;
-      const left = (dealShuffled ? 0 : t.shuffle) + total * (t.lift + t.flight + t.pause) + t.hold;
+      const left = (dealShuffled ? 0 : t.shuffle) + dealSpread(total) + t.hold;
       stage.director.play(DEAL_SHOTS, DEAL_SHOT_SECONDS, left);
     }
     if (!dealShuffled && !dealSkipped) {

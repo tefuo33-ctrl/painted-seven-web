@@ -6,7 +6,7 @@
 // В раундах без заказа («Минуса», «Плюса») слитков нет. В новом раунде слитки уходят со стола.
 
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createLoader } from './loader';
 import { playGoldSound } from '../ui/sound';
 import { METRE, SEATS, seatPoint } from './table';
 
@@ -53,7 +53,7 @@ let template: Promise<THREE.Mesh | null> | null = null;
 
 function loadTemplate(): Promise<THREE.Mesh | null> {
   if (!template) {
-    template = new GLTFLoader()
+    template = createLoader()
       .loadAsync(MODEL_URL)
       .then((gltf) => {
         let found: THREE.Mesh | null = null;

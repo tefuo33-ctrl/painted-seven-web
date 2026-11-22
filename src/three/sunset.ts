@@ -11,7 +11,8 @@
 //    отдельной сценой и отдельной камерой с большой дальностью, чтобы не потерять точность глубины.
 
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { createLoader } from './loader';
 import { METRE } from './table';
 
 const BASE = `${import.meta.env.BASE_URL}models/scene/`;
@@ -52,6 +53,9 @@ export interface SunsetScene {
   far: THREE.Group;
 }
 
+/** Общие материалы светящихся частей фона (небо — отдельно: его видно изнутри). */
+const GLOW_MATERIALS: { sky?: THREE.MeshBasicMaterial; glow?: THREE.MeshBasicMaterial } = {};
+
 function prepare(model: THREE.Object3D, near: boolean): void {
   model.traverse((object) => {
     const mesh = object as THREE.Mesh;
@@ -65,12 +69,16 @@ function prepare(model: THREE.Object3D, near: boolean): void {
       mesh.geometry.deleteAttribute('color_1');
       const sky = material.name.startsWith('PreviewSky');
       // Купол неба смотрит гранями наружу, а мы внутри него — рисуем обе стороны.
-      mesh.material = new THREE.MeshBasicMaterial({
-        vertexColors: true,
-        fog: false,
-        depthWrite: !sky,
-        side: sky ? THREE.DoubleSide : THREE.FrontSide,
-      });
+      // Материал общий на всех: тогда облака, море и солнце склеиваются в одну отрисовку.
+      if (!GLOW_MATERIALS[sky ? 'sky' : 'glow']) {
+        GLOW_MATERIALS[sky ? 'sky' : 'glow'] = new THREE.MeshBasicMaterial({
+          vertexColors: true,
+          fog: false,
+          depthWrite: !sky,
+          side: sky ? THREE.DoubleSide : THREE.FrontSide,
+        });
+      }
+      mesh.material = GLOW_MATERIALS[sky ? 'sky' : 'glow']!;
       if (sky) mesh.renderOrder = -1;
     }
     // Полированный пол (шероховатость 0.08) в игре даёт слепящий блик от света над столом —
@@ -84,7 +92,7 @@ function prepare(model: THREE.Object3D, near: boolean): void {
 
 /** Загрузить сцену заката. Если хоть один файл не загрузился — ошибка (останется прежняя локация). */
 export async function loadSunsetScene(): Promise<SunsetScene> {
-  const loader = new GLTFLoader();
+  const loader = createLoader();
   const load = (file: string) => loader.loadAsync(`${BASE}${file}.glb`).then((gltf) => gltf.scene);
   const [nearModels, farModels] = await Promise.all([
     Promise.all(NEAR_FILES.map(load)),
@@ -93,12 +101,90 @@ export async function loadSunsetScene(): Promise<SunsetScene> {
   const near = sceneRoot();
   nearModels.forEach((model) => {
     prepare(model, true);
-    near.inner.add(model);
+    near.inner.add(mergeStatic(model));
   });
   const far = sceneRoot();
   farModels.forEach((model) => {
     prepare(model, false);
-    far.inner.add(model);
+    far.inner.add(mergeStatic(model));
   });
   return { near: near.outer, far: far.outer };
+}
+
+/**
+ * Склеить неподвижную модель: все её куски с одинаковым материалом (и настройками теней)
+ * становятся одним мешем. Сотни отдельных домиков, облаков и звеньев цепи — это сотни отрисовок
+ * в каждом кадре; после склейки их несколько десятков. Возвращает группу с тем же положением,
+ * поворотом и масштабом, что у `root`.
+ */
+export function mergeStatic(root: THREE.Object3D): THREE.Group {
+  root.updateMatrixWorld(true);
+  const toRoot = root.matrixWorld.clone().invert();
+  const buckets = new Map<string, { material: THREE.Material; mesh: THREE.Mesh; geometries: THREE.BufferGeometry[] }>();
+  const keep: THREE.Object3D[] = [];
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    if ((mesh as THREE.SkinnedMesh).isSkinnedMesh || Array.isArray(mesh.material) || mesh.geometry.morphAttributes.position) {
+      keep.push(mesh);
+      return;
+    }
+    let geometry = mesh.geometry.clone();
+    geometry.applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot, mesh.matrixWorld));
+    // Склеивать можно только одинаково устроенные геометрии: все с индексами и с теми же атрибутами.
+    if (!geometry.index) {
+      const count = geometry.attributes.position.count;
+      const index = new (count > 65535 ? Uint32Array : Uint16Array)(count);
+      for (let i = 0; i < count; i++) index[i] = i;
+      geometry.setIndex(new THREE.BufferAttribute(index, 1));
+    }
+    for (const name of Object.keys(geometry.attributes)) {
+      const attribute = geometry.attributes[name];
+      if ((attribute as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute) {
+        geometry = geometry.toNonIndexed();
+        break;
+      }
+    }
+    const signature = Object.keys(geometry.attributes)
+      .sort()
+      .map((name) => {
+        const attribute = geometry.attributes[name] as THREE.BufferAttribute;
+        return `${name}:${attribute.itemSize}:${attribute.normalized}:${attribute.array.constructor.name}`;
+      })
+      .join(',');
+    const key = `${mesh.material.uuid}|${signature}|${mesh.castShadow}|${mesh.receiveShadow}|${mesh.renderOrder}|${mesh.visible}`;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { material: mesh.material, mesh, geometries: [] };
+      buckets.set(key, bucket);
+    }
+    bucket.geometries.push(geometry);
+  });
+
+  const group = new THREE.Group();
+  group.position.copy(root.position);
+  group.quaternion.copy(root.quaternion);
+  group.scale.copy(root.scale);
+  group.name = root.name;
+  for (const { material, mesh, geometries } of buckets.values()) {
+    const merged = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries, false);
+    // Не склеилось (такого быть не должно) — каждый кусок отдельным мешем, как было.
+    for (const geometry of merged ? [merged] : geometries) {
+      const result = new THREE.Mesh(geometry, material);
+      result.castShadow = mesh.castShadow;
+      result.receiveShadow = mesh.receiveShadow;
+      result.renderOrder = mesh.renderOrder;
+      result.visible = mesh.visible;
+      result.name = mesh.name;
+      group.add(result);
+    }
+  }
+  // То, что склеить нельзя, переносим как есть (в координатах root).
+  for (const object of keep) {
+    const copy = object.clone();
+    copy.matrixAutoUpdate = false;
+    copy.matrix.multiplyMatrices(toRoot, object.matrixWorld);
+    group.add(copy);
+  }
+  return group;
 }
