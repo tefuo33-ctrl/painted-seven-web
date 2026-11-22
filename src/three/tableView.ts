@@ -7,6 +7,7 @@ import { type Card, type Suit, cardLabel, isJoker } from '../engine';
 import { CARD_SIZE, Card3D, type MoveOptions, type Pose, type PoseSource } from './card3d';
 import { PALETTE, glow } from './gfx';
 import { GoldBars } from './goldBars';
+import { DEAL_TIMING } from '../shared/dealTiming';
 import type { Stage } from './stage';
 import { SEATS, seatPoint } from './table';
 
@@ -60,6 +61,27 @@ const HAND_NEAR = 1.6;
 /** Сколько секунд козырь показывается всем после раздачи. */
 const TRUMP_SHOW_SECONDS = 5;
 
+/**
+ * Раздача: зона перед каждым игроком на сукне, куда ложатся его карты рубашкой вверх.
+ * Ряд с нахлёстом, выровнен по направлению места. Зоны четырёх мест не пересекаются.
+ */
+const ZONE_FROM_CENTER = 3.35;
+const ZONE_SPACING = 0.42;
+/** Время одной карты при скорости 1 (секунды): отделить от колоды, полёт, пауза после приземления. */
+const DEAL_LIFT = DEAL_TIMING.lift;
+const DEAL_FLIGHT = DEAL_TIMING.flight;
+const DEAL_PAUSE = DEAL_TIMING.pause;
+
+/** Скорость анимаций раздачи (1 — обычная). Задаёт игра из настроек. */
+export interface DealOptions {
+  /** С какого места раздача начинается (сосед раздающего по часовой). */
+  firstSeat: number;
+  speed: number;
+  /** Нажали «Пропустить»: оставшиеся карты сразу ложатся на места. */
+  skipped: () => boolean;
+  /** Карта легла (для звука). */
+  onLand?: () => void;
+}
 const AXIS_X = new THREE.Vector3(1, 0, 0);
 const AXIS_Y = new THREE.Vector3(0, 1, 0);
 const AXIS_Z = new THREE.Vector3(0, 0, 1);
@@ -100,6 +122,13 @@ export class TableView {
   /** Где сейчас колода (справа от раздающего) и куда ложится козырь. */
   private deckSpot = TableView.deckSpotFor(0);
   private deckSeat = 0;
+  /** Идёт раздача по одной карте: второй раз её не запускаем, а sync() не трогает руки. */
+  private dealRun: Promise<void> | null = null;
+  private dealHold = false;
+  /** Карта, которая сейчас летит при раздаче, и мягкая тень под ней на сукне. */
+  private flying: Card3D | null = null;
+  private flyShadow: THREE.Mesh;
+  private euler = new THREE.Euler();
 
   /** Место колоды справа от игрока на месте `seat`, на его краю стола. */
   private static deckSpotFor(seat: number): { position: THREE.Vector3; trump: THREE.Vector3; yaw: number } {
@@ -132,6 +161,24 @@ export class TableView {
     this.crystal.scale.y = 1.5;
     this.crystal.visible = false;
     this.group.add(this.crystal);
+
+    // Тень под летящей картой: мягкое тёмное пятно на сукне. Видна и без теней рендера (телефон).
+    const shadowCanvas = document.createElement('canvas');
+    shadowCanvas.width = shadowCanvas.height = 64;
+    const ctx = shadowCanvas.getContext('2d')!;
+    const gradient = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
+    gradient.addColorStop(0, 'rgba(0,0,0,0.85)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    this.flyShadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.25 * CARD_SIZE, 1.7 * CARD_SIZE),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shadowCanvas), transparent: true, depthWrite: false, opacity: 0 }),
+    );
+    this.flyShadow.rotation.x = -Math.PI / 2;
+    this.flyShadow.visible = false;
+    this.flyShadow.renderOrder = 1;
+    this.group.add(this.flyShadow);
 
     stage.scene.add(this.group);
     // Слитки заказа: вылетают из кистей игрока (у меня — снизу экрана, из веера).
@@ -247,14 +294,147 @@ export class TableView {
     };
   }
 
+  /** Место карты номер `index` из `count` в зоне игрока: ряд с нахлёстом, рубашкой вверх, к игроку. */
+  private zonePose(seat: number, index: number, count: number, faceUp = false): Pose {
+    const offset = index - (count - 1) / 2;
+    // Чуть-чуть неровно, как кладёт живой человек, но одинаково для одной и той же карты.
+    const wobble = Math.sin(seat * 12.9898 + index * 78.233) * 43758.5453;
+    const noise = wobble - Math.floor(wobble) - 0.5;
+    return {
+      position: seatPoint(seat, offset * ZONE_SPACING + noise * 0.04, 0.025 + index * 0.007, ZONE_FROM_CENTER + noise * 0.05),
+      quaternion: lying(SEATS[seat].angle + noise * 0.07, faceUp),
+      scale: 1,
+    };
+  }
+
+  /**
+   * Раздача по одной карте: строго по часовой стрелке, начиная с `firstSeat`, круг за кругом.
+   * Сколько карт и кому — уже решила логика (state.hands); здесь только показываем.
+   * Каждая карта: отделяется от верха колоды → чуть поднимается → летит дугой, слегка
+   * поворачиваясь, с тенью под собой → ложится в зону игрока рубашкой вверх → пауза → следующая.
+   * Свои карты тоже летят рубашкой вверх; открываются, когда игрок берёт их в руку.
+   * В раундах по 9 карт последняя карта раздающего ложится лицом вверх — это козырь.
+   */
+  deal(state: TableState, options: DealOptions): Promise<void> {
+    // Две раздачи одновременно не идут: новая ждёт, пока закончится прежняя.
+    if (this.dealRun) return this.dealRun.then(() => this.deal(state, options));
+    this.dealRun = this.runDeal(state, options).finally(() => {
+      this.dealRun = null;
+      this.dealHold = false;
+      this.flying = null;
+      this.flyShadow.visible = false;
+    });
+    return this.dealRun;
+  }
+
+  get dealing(): boolean {
+    return this.dealRun !== null;
+  }
+
+  /**
+   * Раздача начинается (логика уже раздала, камера ещё поднимается): до самой раздачи стол
+   * не перекладываем, иначе карты «телепортируются» в руки. Снимается после deal() или вручную.
+   */
+  holdForDeal(on: boolean): void {
+    this.dealHold = on;
+  }
+
+  private async runDeal(state: TableState, options: DealOptions): Promise<void> {
+    this.state = state;
+    this.hideTrump();
+    // Места с картами — по часовой стрелке от первого получателя.
+    const seats = [0, 1, 2, 3]
+      .map((i) => (options.firstSeat + i) % 4)
+      .filter((seat) => state.hands[seat].length > 0);
+    const perSeat = Math.max(0, ...seats.map((seat) => state.hands[seat].length));
+    const trumpLabel = state.trumpCard ? cardLabel(state.trumpCard) : null;
+
+    // Мои карты по ключам: в раунде по 9 карт, если раздаю я, последней мне приходит козырь.
+    const myLabels = state.hands[0].flatMap((card) => (card ? [cardLabel(card)] : []));
+    if (state.trumpSeat === 0 && trumpLabel && myLabels.includes(trumpLabel)) {
+      myLabels.splice(myLabels.indexOf(trumpLabel), 1);
+      myLabels.push(trumpLabel);
+    }
+
+    // Колода: верхняя карта — с самым большим номером.
+    const deck = new Map(this.cards.filter((card) => card.key.startsWith('d:')).map((card) => [Number(card.key.slice(2)), card]));
+    let top = 35;
+    const takeTop = (): Card3D => {
+      while (top >= 0 && !deck.has(top)) top--;
+      const card = deck.get(top) ?? this.cards.find((c) => !c.mesh.visible) ?? this.cards[0];
+      deck.delete(top);
+      top--;
+      return card;
+    };
+
+    for (let round = 0; round < perSeat; round++) {
+      for (const seat of seats) {
+        if (round >= state.hands[seat].length) continue;
+        const card = takeTop();
+        card.key = seat === 0 ? `c:${myLabels[round]}` : `h${seat}:${round}`;
+        card.setFace(null);
+        card.setLook('normal');
+        card.mesh.visible = true;
+        // Последняя карта раздающего в раунде по 9 карт — козырь, ложится лицом вверх.
+        const isTrump = state.trumpSeat === seat && round === state.hands[seat].length - 1 && state.trumpCard !== null;
+        if (isTrump) card.setFace(state.trumpCard);
+        const target = this.zonePose(seat, round, state.hands[seat].length, isTrump);
+
+        if (options.skipped()) {
+          card.place(target);
+          continue;
+        }
+        const speed = Math.max(0.1, options.speed);
+        // 1) Верхняя карта отделяется от колоды и чуть поднимается, разворачиваясь к получателю.
+        const lift: Pose = {
+          position: card.mesh.position.clone().add(new THREE.Vector3(0, 0.32, 0)),
+          quaternion: lying(THREE.MathUtils.lerp(this.deckSpot.yaw, SEATS[seat].angle, 0.25), false),
+        };
+        await card.moveTo(lift, { duration: DEAL_LIFT / speed });
+        if (options.skipped()) {
+          card.place(target);
+          continue;
+        }
+        // 2) Полёт дугой к зоне игрока, с лёгким поворотом и тенью на сукне.
+        this.flying = card;
+        await card.moveTo(target, { duration: DEAL_FLIGHT / speed, arc: 0.55, spin: 0.35 * (seat % 2 === 0 ? 1 : -1) });
+        this.flying = null;
+        this.flyShadow.visible = false;
+        options.onLand?.();
+        // 3) Короткая пауза, как у живого раздающего.
+        if (!options.skipped()) await this.pause(DEAL_PAUSE / speed);
+      }
+    }
+
+    // Остаток колоды выравниваем, а в остальных раундах козырь открывается с верха колоды.
+    if (state.trumpCard && state.trumpSeat === null) this.layTrump(state.trumpCard, options.skipped() ? 0 : 0.15);
+  }
+
+  private pause(seconds: number): Promise<void> {
+    return new Promise((resolve) => window.setTimeout(resolve, seconds * 1000));
+  }
+
+  /** Показать всем козырь — последнюю карту раздающего (раунды по 9 карт). Зовётся после возврата камеры. */
+  revealTrump(): void {
+    const state = this.state;
+    if (!state?.trumpCard || state.trumpSeat === null) return;
+    const seat = state.trumpSeat;
+    const from = seat === 0 ? this.zonePose(0, 0, 1).position : (this.handAnchor(seat)?.position ?? this.zonePose(seat, 0, 1).position);
+    this.showTrump(state.trumpCard, 0, from);
+  }
+
   // ---------- Обновление раскладки ----------
 
   /**
    * Привести стол к новому состоянию. `deal` — это раздача: карты разлетаются из колоды
    * по одной, по часовой стрелке, начиная с места `firstSeat`.
    */
-  sync(state: TableState, options: { deal?: boolean; firstSeat?: number } = {}): void {
+  sync(state: TableState, options: { deal?: boolean; firstSeat?: number; pickup?: number } = {}): void {
     this.state = state;
+    // Пока карты раздаются по одной (и пока раздача готовится), раскладку не трогаем:
+    // раздача сама кладёт карты по местам.
+    if (this.dealRun || this.dealHold) return;
+    let pickupIndex = 0;
     // Колода — справа от раздающего; после раздачи — справа от следующего раздающего.
     const handMoved = state.handAway !== this.handAway;
     this.handAway = state.handAway;
@@ -348,6 +528,11 @@ export class TableView {
       if (card.face !== want.face) card.setFace(want.face);
       card.setLook(want.look);
       if (isNew || options.deal) void card.moveTo(want.pose, want.move);
+      // Раздача закончилась — игроки берут карты из своих зон в руки (`pickup` — скорость).
+      else if (options.pickup && (want.key.startsWith('c:') || want.key.startsWith('h'))) {
+        const speed = Math.max(0.1, options.pickup);
+        void card.moveTo(want.pose, { duration: 0.55 / speed, arc: 0.6, delay: (pickupIndex++ % 9) * 0.05 / speed });
+      }
       // Колода переезжает к следующему раздающему плавно, дугой, карта за картой.
       else if (deckMoved && want.key.startsWith('d:')) void card.moveTo(want.pose, { duration: 0.7, arc: 0.9, delay: Number(want.key.slice(2)) * 0.012 });
       // Веер уезжает и возвращается плавно, карты чуть друг за другом.
@@ -402,11 +587,12 @@ export class TableView {
   }
 
   /** Показать всем карту, определившую козырь: она поднимается над столом на несколько секунд. */
-  private showTrump(card: Card, delay: number): void {
+  private showTrump(card: Card, delay: number, from?: THREE.Vector3): void {
     this.trumpCard.setFace(card);
     this.trumpCard.setLook('lit');
     this.trumpCard.mesh.visible = true;
-    this.trumpCard.place({ position: this.deckSpot.position.clone().setY(0.6), quaternion: lying(this.deckSpot.yaw, false), scale: 1 });
+    const start = from ? from.clone().setY(Math.max(0.6, from.y)) : this.deckSpot.position.clone().setY(0.6);
+    this.trumpCard.place({ position: start, quaternion: lying(this.deckSpot.yaw, false), scale: 1 });
     // Карта развёрнута лицом к камере, чтобы её было видно с любого места.
     const pose: PoseSource = () => ({
       position: new THREE.Vector3(0, 2.3, -0.6),
@@ -484,6 +670,17 @@ export class TableView {
 
   private update(time: number, delta: number): void {
     for (const card of this.cards) card.update(delta);
+    // Тень летящей карты: чем выше карта, тем тень больше, мягче и бледнее.
+    if (this.flying) {
+      const p = this.flying.mesh.position;
+      const height = Math.max(0, p.y - 0.03);
+      const material = this.flyShadow.material as THREE.MeshBasicMaterial;
+      this.flyShadow.visible = true;
+      this.flyShadow.position.set(p.x + height * 0.12, 0.012, p.z + height * 0.08);
+      this.flyShadow.rotation.z = this.euler.setFromQuaternion(this.flying.mesh.quaternion, 'YXZ').y;
+      this.flyShadow.scale.setScalar(1 + height * 0.35);
+      material.opacity = 0.45 / (1 + height * 1.4);
+    }
     this.gold.update(delta);
     this.trumpCard.update(delta);
 

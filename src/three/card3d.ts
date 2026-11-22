@@ -25,6 +25,8 @@ export interface MoveOptions {
   delay?: number;
   /** Высота дуги полёта. */
   arc?: number;
+  /** Лёгкий поворот в полёте вокруг вертикали (радианы): карта «плывёт» и ложится ровно. */
+  spin?: number;
 }
 
 type Look = 'normal' | 'dim' | 'lit' | 'chosen';
@@ -90,6 +92,9 @@ function getHalo() {
   return haloParts;
 }
 
+const UP = new THREE.Vector3(0, 1, 0);
+const spinQuaternion = new THREE.Quaternion();
+
 function ease(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
@@ -109,6 +114,7 @@ export class Card3D {
   private duration = 0.3;
   private delay = 0;
   private arc = 0;
+  private spin = 0;
   private onArrive: (() => void) | null = null;
   private halo: THREE.Mesh;
 
@@ -162,6 +168,7 @@ export class Card3D {
     this.duration = options.duration ?? 0.35;
     this.delay = options.delay ?? 0;
     this.arc = options.arc ?? 0;
+    this.spin = options.spin ?? 0;
     this.onArrive?.(); // предыдущий полёт прерван — считаем его завершённым
     return new Promise((resolve) => {
       this.onArrive = resolve;
@@ -204,6 +211,7 @@ export class Card3D {
     this.mesh.position.lerpVectors(this.fromPosition, pose.position, k);
     this.mesh.position.y += Math.sin(Math.PI * k) * this.arc;
     this.mesh.quaternion.slerpQuaternions(this.fromQuaternion, pose.quaternion, k);
+    if (this.spin !== 0) this.mesh.quaternion.premultiply(spinQuaternion.setFromAxisAngle(UP, this.spin * Math.sin(Math.PI * k)));
     this.mesh.scale.setScalar(this.fromScale + (scale - this.fromScale) * k);
   }
 }

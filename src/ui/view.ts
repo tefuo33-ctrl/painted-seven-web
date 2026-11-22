@@ -39,7 +39,7 @@ import {
   SUITS_MALE,
   TIES,
 } from '../three/character';
-import { gfx, hex } from '../three/gfx';
+import { DEAL_SPEEDS, gfx, hex } from '../three/gfx';
 import type { Profile } from './profile';
 
 export const HUMAN = 0;
@@ -382,7 +382,7 @@ function topbarHtml(ui: UiState, game: GameState): string {
         <b>${t('round.label', { n: game.roundIndex + 1, total: game.rounds.length })}</b>
         <span class="mode">«${roundTitle(round)}»</span>
       </div>
-      ${trumpHtml(game)}
+      ${ui.dealing ? '' : trumpHtml(game) /* козырь открывается в конце раздачи */}
     </div>
     <div class="top-buttons">
       ${ui.viewChanged ? `<button class="btn small" data-action="reset-view" title="${t('hud.resetView')}">⟲</button>` : ''}
@@ -482,8 +482,9 @@ function hudHtml(ui: UiState, game: GameState): string {
   for (let player = 1; player < game.playerNames.length; player++) plates += plateHtml(game, player);
   const hasJoker = game.hands[HUMAN]?.some(isJoker) ?? false;
   const kicked = game.autoPlay[HUMAN] ? `<p class="kicked">${t('hud.kicked')}</p>` : '';
-  return `<div class="hud">
+  return `<div class="hud${ui.dealing ? ' dealing' : ''}">
     ${topbarHtml(ui, game)}
+    ${ui.dealing ? `<button class="btn small skip-deal" data-action="skip-deal">⏭ ${t('hud.skipDeal')}</button>` : ''}
     ${plates}
     <div class="bottom">
       ${kicked}
@@ -578,7 +579,11 @@ function settingsHtml(): string {
       ['2', t('settings.sharpness.soft')],
       ['3', t('settings.sharpness.retro')],
     ], String(gfx.pixelScale))}
-    ${selectHtml('data-gfx="bloom"', t('settings.bloom'), onOff, String(gfx.bloom))}`;
+    ${selectHtml('data-gfx="bloom"', t('settings.bloom'), onOff, String(gfx.bloom))}
+    ${selectHtml('data-gfx="dealSpeed"', t('settings.dealSpeed'), DEAL_SPEEDS.map((speed, i): [string, string] => [
+      String(speed),
+      t((['settings.dealSpeed.slow', 'settings.dealSpeed.normal', 'settings.dealSpeed.fast', 'settings.dealSpeed.veryFast'] as TextKey[])[i]),
+    ]), String(gfx.dealSpeed))}`;
 }
 
 function choiceButton(action: string, value: string, title: string, note: string): string {

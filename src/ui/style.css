@@ -527,6 +527,21 @@ body.scene-only #app {
   pointer-events: none;
 }
 
+/* Раздача (камера сверху): в центре внимания карты — таблички и нижняя панель не закрывают стол,
+   остаётся только кнопка «Пропустить раздачу» внизу. */
+.hud.dealing .plate,
+.hud.dealing .status-text,
+.hud.dealing .mine-row,
+.hud.dealing .kicked {
+  display: none;
+}
+.skip-deal {
+  position: absolute;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  pointer-events: auto;
+}
+
 .topbar {
   position: absolute;
   top: 0;

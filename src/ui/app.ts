@@ -29,9 +29,11 @@ import {
 import { type Language, getLanguage, onLanguageChange, setLanguage, t } from '../i18n';
 import { type Net, clientId, connect, serverUrl } from '../net/client';
 import type { ServerMessage } from '../net/protocol';
+import { DEAL_TIMING } from '../shared/dealTiming';
 import { pickBotNames } from '../shared/names';
 import { repaintCardAtlas } from '../three/cardAtlas';
 import { type Skin, randomGender, randomSkin, sanitizeSkin } from '../three/character';
+import type { ShotName } from '../three/cameraDirector';
 import { gfx, saveGfx } from '../three/gfx';
 import { Players } from '../three/players';
 import type { Stage } from '../three/stage';
@@ -85,6 +87,11 @@ function store(key: string, value: unknown): void {
     // не страшно: просто не сохранится
   }
 }
+
+/** Ракурсы, с которых смотрим на взятку, пока ход не мой (склейки, как в кино). */
+const TRICK_SHOTS: ShotName[] = ['highSide', 'lowFar', 'top', 'midLeft', 'highFar'];
+/** С какого ракурса начать в следующий раз — для разнообразия. */
+let trickShot = 0;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -169,21 +176,50 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       .map(({ card }) => card);
   }
 
-  function syncTable(options: { deal?: boolean } = {}): void {
+  /** Что видит человек за столом (его карты — в выбранном им порядке). */
+  function tableState(game: GameState) {
+    const state = tableStateFromGame(game, HUMAN);
+    state.hands[0] = orderHand(state.hands[0]);
+    return state;
+  }
+
+  /**
+   * Камера в розыгрыше (та же машина состояний, что и при раздаче): пока ход не мой — сходил
+   * и жду остальных, или взятку ещё доигрывают до меня — смотрю на стол сверху, мой веер убран.
+   * Дошёл ход до меня — камера возвращается к глазам, и я хожу. Раздачей камера управляет сама.
+   */
+  function followTrickCamera(watchFromTop: boolean): void {
+    if (ui.dealing || ui.screen !== 'game') return;
+    const director = stage.director;
+    director.speed = gfx.dealSpeed;
+    if (watchFromTop) {
+      if (director.mode === 'gameplay' || director.mode === 'toGameplay') {
+        // Как в кино: склейка на ракурс, а пока ждём — склейки на другие ракурсы.
+        // Каждый раз начинаем с другого, чтобы было разнообразно.
+        const order = TRICK_SHOTS.map((_, i) => TRICK_SHOTS[(i + trickShot) % TRICK_SHOTS.length]);
+        trickShot = (trickShot + 1) % TRICK_SHOTS.length;
+        director.cutTo(order[0]);
+        director.play(order);
+      }
+    } else if (director.mode === 'top' || director.mode === 'toTop') {
+      director.cutTo('gameplay'); // мой ход — склейка обратно к глазам
+    }
+  }
+
+  /** `pickup` — раздача закончилась, игроки берут карты в руки (значение — скорость анимаций). */
+  function syncTable(options: { pickup?: number } = {}): void {
     const game = ui.game;
     if (!game) return;
-    if (options.deal) handOrder = []; // новая раздача — карты в обычном порядке
     // Звук, когда на стол легла новая карта; у джокера — свой.
     if (game.trick.length > lastTrickLength) {
       if (isJoker(game.trick[game.trick.length - 1].card)) playJokerSound();
       else playCardSound();
     }
     lastTrickLength = game.trick.length;
-    if (options.deal) playDealSound(currentRound(game).cards * 4);
     table.selected = ui.selected;
-    const state = tableStateFromGame(game, HUMAN);
-    state.hands[0] = orderHand(state.hands[0]);
-    table.sync(state, { deal: options.deal, firstSeat: seatOf(game, firstPlayer(game)) });
+    const state = tableState(game);
+    table.sync(state, { pickup: options.pickup });
+    followTrickCamera(state.handAway);
     const turn = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
     const active = turn === null ? null : seatOf(game, turn);
     marker.show(ui.screen === 'game' ? active : null);
@@ -287,6 +323,86 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     }, Math.max(0, deadline - Date.now()));
   }
 
+  // ---------- Раздача с камерой сверху ----------
+  // PREPARATION → CAMERA TRANSITION → (тасовка) → CARD DISTRIBUTION → DISTRIBUTION COMPLETE →
+  // CAMERA RETURN → GAMEPLAY. Кому и какие карты — уже решила логика; здесь только показ.
+  // Всё это время ui.dealing и working: нельзя ходить, заказывать и запустить вторую раздачу.
+
+  /** Нажали «Пропустить раздачу» (или вышли из партии): всё сразу встаёт на свои места. */
+  let dealSkipped = false;
+  /** Колоду в этой раздаче уже потасовали (онлайн тасовка идёт, пока сервер раздаёт). */
+  let dealShuffled = false;
+
+  /** PREPARATION + CAMERA TRANSITION: блокируем всё, камера уходит наверх, раздающий тасует. */
+  async function dealIntro(): Promise<void> {
+    if (!ui.dealing) {
+      ui.dealing = true;
+      dealSkipped = false;
+      dealShuffled = false;
+      handOrder = []; // новая раздача — карты в обычном порядке
+      render();
+    }
+    stage.director.speed = gfx.dealSpeed;
+    if (dealSkipped) stage.director.snap('top');
+    else await stage.director.goTop();
+    if (!dealShuffled && !dealSkipped) {
+      dealShuffled = true;
+      playDealSound(0);
+      await table.shuffle();
+    }
+  }
+
+  /** CARD DISTRIBUTION → DISTRIBUTION COMPLETE → CAMERA RETURN. Логика уже раздала карты. */
+  async function dealOutro(alive: () => boolean): Promise<void> {
+    const game = ui.game;
+    if (!game) return;
+    const speed = gfx.dealSpeed;
+    const state = tableState(game);
+    await table.deal(state, {
+      firstSeat: seatOf(game, firstPlayer(game)),
+      speed,
+      skipped: () => dealSkipped,
+      onLand: () => playCardSound(),
+    });
+    // Камера не уходит, пока хоть одна карта в воздухе.
+    await waitForCards();
+    if (!alive()) return;
+    // Проверка: у каждого столько карт, сколько раздала логика.
+    const cards = currentRound(game).cards;
+    if (game.hands.some((hand) => hand.length !== cards)) console.warn('Раздача: число карт не совпадает с раундом', game.hands);
+    if (!dealSkipped) {
+      // Итог раздачи: склейка на ракурс сверху сбоку, как в кино.
+      stage.director.cutTo('highSide');
+      await sleep((DEAL_TIMING.hold * 1000) / speed);
+    }
+    if (!alive()) return;
+    // Игроки берут карты в руки, камера плавно возвращается к глазам игрока.
+    syncTable({ pickup: dealSkipped ? 20 : speed });
+    if (dealSkipped) stage.director.snap('gameplay');
+    else await stage.director.goBack();
+    await waitForCards();
+    if (!alive()) return;
+    table.revealTrump();
+    ui.dealing = false;
+    render();
+    syncTable();
+  }
+
+  /** Раздачу прервали (выход в меню, новая партия): камеру сразу к игроку. */
+  function abortDeal(): void {
+    dealSkipped = true;
+    ui.dealing = false;
+    table.holdForDeal(false);
+    stage.director.snap('gameplay');
+  }
+
+  function skipDeal(): void {
+    if (!ui.dealing) return;
+    dealSkipped = true;
+    if (stage.director.mode === 'toTop') stage.director.snap('top');
+    if (stage.director.mode === 'toGameplay') stage.director.snap('gameplay');
+  }
+
   /** Двигает партию вперёд, пока не понадобится решение человека. */
   async function advance(): Promise<void> {
     if (working || ui.online) return;
@@ -301,15 +417,15 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         save();
 
         if (game.phase === 'deal') {
-          // Тасование и раздача: только анимация, никаких кнопок.
-          ui.dealing = true;
-          render();
-          await table.shuffle();
-          if (!alive()) break;
+          // Логика раздаёт сразу и не ждёт анимацию; анимация потом показывает готовый результат.
+          // Стол (колода у раздающего) уже выставлен syncTable() выше — до раздачи.
+          table.holdForDeal(true);
           dealCards(game);
-          syncTable({ deal: true });
-          await waitForCards();
-          ui.dealing = false;
+          save();
+          await dealIntro();
+          if (!alive()) break;
+          await dealOutro(alive);
+          if (!alive()) break;
         } else if (game.phase === 'bidding' || game.phase === 'playing') {
           if (!automatic(game, game.turn)) break;
           await sleep(BOT_DELAY);
@@ -488,18 +604,16 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         if (previous && previous.turn !== next.turn) ui.selected = null;
 
         if (next.phase === 'deal') {
-          ui.dealing = true;
-          render();
+          // Сервер скоро раздаст: колода у раздающего, камера уходит наверх, раздающий тасует.
           syncTable();
-          await table.shuffle();
+          await dealIntro();
         } else if (dealtNow) {
-          ui.dealing = true;
-          render();
-          syncTable({ deal: true });
-          await waitForCards();
-          ui.dealing = false;
-          render();
-          syncTable();
+          // Сервер раздал — показываем раздачу по одной карте (подъём и тасовку, если их ещё не было).
+          // Колода уже у раздающего (она переехала к нему в конце прошлого раунда).
+          table.holdForDeal(true);
+          await dealIntro();
+          if (mySession !== session) break;
+          await dealOutro(() => mySession === session);
         } else {
           ui.dealing = false;
           render();
@@ -526,6 +640,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     ui.online = null;
     skins = [];
     session++;
+    abortDeal();
     working = false;
   }
 
@@ -592,6 +707,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     skins = tableSkins.map((skin) => (skin ? sanitizeSkin(skin) : null));
     players.seat(skinsBySeat(skins));
     session++;
+    abortDeal();
     working = false;
     lastTrickLength = game.trick.length;
     ui.game = game;
@@ -632,6 +748,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       case 'to-menu':
         if (ui.online) leaveOnline();
         session++;
+        abortDeal();
         working = false;
         window.clearTimeout(turnTimer);
         ui.screen = 'menu';
@@ -645,6 +762,9 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         break;
       case 'reset-view':
         stage.resetView();
+        break;
+      case 'skip-deal':
+        skipDeal();
         break;
       case 'open-lobby':
         ui.screen = 'lobby';
@@ -877,6 +997,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       if (data.gfx === 'bloom') gfx.bloom = element.value === 'true';
       if (data.gfx === 'quality') gfx.quality = element.value === 'low' ? 'low' : 'high';
       if (data.gfx === 'pixelScale') gfx.pixelScale = Number(element.value);
+      if (data.gfx === 'dealSpeed') gfx.dealSpeed = Number(element.value);
       if (data.gfx === 'musicVolume' || data.gfx === 'sfxVolume') return; // ползунки обработаны выше
       applySoundSettings();
       saveGfx();

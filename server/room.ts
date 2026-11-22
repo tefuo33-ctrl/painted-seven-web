@@ -19,6 +19,7 @@ import {
 } from '../src/engine';
 import { MIN_PLAYERS } from '../src/engine/rounds';
 import { type SeatInfo, type ServerMessage, PLAYER_COUNT, viewFor } from '../src/net/protocol';
+import { dealSeconds } from '../src/shared/dealTiming';
 import { pickBotNames } from '../src/shared/names';
 import { type Skin, randomGender, randomSkin } from '../src/shared/skin';
 
@@ -221,7 +222,10 @@ export class Room {
         after(BEFORE_DEAL, () => {
           dealCards(game);
           // Ждём, пока у игроков доиграет анимация раздачи.
-          this.dealPause = 1600 + currentRound(game).cards * this.seats.length * 80;
+          // Камера сверху, тасовка, карты по одной, возврат камеры (src/shared/dealTiming.ts);
+          // подъём камеры и тасовка у игроков уже шли, пока сервер ждал BEFORE_DEAL.
+          const total = currentRound(game).cards * game.playerNames.length;
+          this.dealPause = Math.max(1600, dealSeconds(total) * 1000 - BEFORE_DEAL + 300);
         });
         break;
       case 'bidding':

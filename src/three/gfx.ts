@@ -20,7 +20,12 @@ export const gfx = {
   bloomStrength: 0.45,
   /** Сила виньетки: 0 — выключена. */
   vignette: 0.5,
+  /** Скорость раздачи (камера сверху и полёт карт): 1 — обычная, больше — быстрее. */
+  dealSpeed: 1,
 };
+
+/** Варианты скорости раздачи в настройках. */
+export const DEAL_SPEEDS = [0.7, 1, 1.6, 2.5];
 
 const GFX_KEY = 'painted-seven-gfx-v4';
 
@@ -37,6 +42,7 @@ export function loadGfx(): void {
     gfx.sfxVolume = volume(saved.sfxVolume) ?? gfx.sfxVolume;
     if (typeof saved.bloom === 'boolean') gfx.bloom = saved.bloom;
     if (typeof saved.pixelScale === 'number' && saved.pixelScale >= 1 && saved.pixelScale <= 5) gfx.pixelScale = saved.pixelScale;
+    if (typeof saved.dealSpeed === 'number' && DEAL_SPEEDS.includes(saved.dealSpeed)) gfx.dealSpeed = saved.dealSpeed;
   } catch {
     // хранилище недоступно — остаются настройки по умолчанию
   }
@@ -44,8 +50,8 @@ export function loadGfx(): void {
 
 export function saveGfx(): void {
   try {
-    const { quality, music, musicVolume, sfx, sfxVolume, bloom, pixelScale } = gfx;
-    localStorage.setItem(GFX_KEY, JSON.stringify({ quality, music, musicVolume, sfx, sfxVolume, bloom, pixelScale }));
+    const { quality, music, musicVolume, sfx, sfxVolume, bloom, pixelScale, dealSpeed } = gfx;
+    localStorage.setItem(GFX_KEY, JSON.stringify({ quality, music, musicVolume, sfx, sfxVolume, bloom, pixelScale, dealSpeed }));
   } catch {
     // не страшно
   }

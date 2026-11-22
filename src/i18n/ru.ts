@@ -67,6 +67,11 @@ export const ru = {
   'settings.sharpness.soft': 'Лёгкие пиксели',
   'settings.sharpness.retro': 'Крупные пиксели',
   'settings.bloom': 'Свечение',
+  'settings.dealSpeed': 'Скорость раздачи',
+  'settings.dealSpeed.slow': 'Медленно',
+  'settings.dealSpeed.normal': 'Обычно',
+  'settings.dealSpeed.fast': 'Быстро',
+  'settings.dealSpeed.veryFast': 'Очень быстро',
 
   // Раунды и режимы
   'round.label': 'Раунд {n}/{total}',
@@ -98,6 +103,7 @@ export const ru = {
   'hud.auto': 'бот',
   'hud.cameraHint': 'Тяните — вращать камеру, колесо — приблизить, двойное нажатие — рассмотреть',
   'status.dealing': 'Раздача…',
+  'hud.skipDeal': 'Пропустить раздачу',
   'status.youDeal': 'Вы раздаёте…',
   'status.deals': 'Раздаёт {name}…',
   'status.thinksBid': '{name} думает над заказом…',

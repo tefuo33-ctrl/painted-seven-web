@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Room } from '../server/room';
 import { type GameState, allowedBids, cardLabel, createGame, dealCards, legalCardsFor } from '../src/engine';
 import { type ServerMessage, makeRoomCode, viewFor } from '../src/net/protocol';
+import { dealSeconds } from '../src/shared/dealTiming';
 import { FEMALE_NAMES, MALE_NAMES, pickBotNames } from '../src/shared/names';
 import { DEFAULT_SKIN, sanitizeSkin } from '../src/shared/skin';
 
@@ -190,7 +191,7 @@ describe('Готовность, таймер и сложность ботов', 
     for (const id of ['a', 'b', 'c', 'd']) room.join(id, id, DEFAULT_SKIN, fakeConnection());
     room.start('a');
     const game = room.game!;
-    vi.advanceTimersByTime(4000); // раздача и её анимация
+    vi.advanceTimersByTime(dealWait(game)); // раздача и её анимация (камера сверху, карты по одной)
     expect(game.phase).toBe('bidding');
     const idle = game.turn;
     vi.advanceTimersByTime(31000);
@@ -210,7 +211,7 @@ describe('Готовность, таймер и сложность ботов', 
     for (const id of ['a', 'b', 'c', 'd']) room.join(id, id, DEFAULT_SKIN, fakeConnection());
     room.start('a');
     const game = room.game!;
-    vi.advanceTimersByTime(4000);
+    vi.advanceTimersByTime(dealWait(game));
     const id = ['a', 'b', 'c', 'd'][game.turn];
     const startedAt = game.turnStartedAt;
     vi.advanceTimersByTime(20000);
@@ -260,3 +261,8 @@ describe('Имена ботов и коды комнат', () => {
     expect(sanitizeSkin(null)).toEqual(DEFAULT_SKIN);
   });
 });
+
+/** Сколько ждать от старта раунда до начала заказа: пауза сервера перед раздачей и анимация раздачи. */
+function dealWait(game: GameState): number {
+  return Math.ceil(dealSeconds(game.rounds[game.roundIndex].cards * game.playerNames.length) * 1000) + 500;
+}
