@@ -85,6 +85,8 @@ export interface UiState {
   selected: string | null;
   /** Идёт анимация (раздача, сбор взятки) — подсказка это учитывает. */
   dealing: boolean;
+  /** Игрок сам включил вид на стол сверху (кнопка внизу справа). */
+  topView: boolean;
   /** Игрок повернул камеру — показываем кнопку «вернуть вид». */
   viewChanged: boolean;
   /** Короткое сообщение поверх стола (например, о штрафе за время). */
@@ -484,7 +486,14 @@ function hudHtml(ui: UiState, game: GameState): string {
   const kicked = game.autoPlay[HUMAN] ? `<p class="kicked">${t('hud.kicked')}</p>` : '';
   return `<div class="hud${ui.dealing ? ' dealing' : ''}">
     ${topbarHtml(ui, game)}
-    ${ui.dealing ? `<button class="btn small skip-deal" data-action="skip-deal">⏭ ${t('hud.skipDeal')}</button>` : ''}
+    ${
+      ui.dealing
+        ? `<button class="btn small corner-btn" data-action="skip-deal">⏭ ${t('hud.skipDeal')}</button>`
+        : // Вид сверху ⇄ мои карты: включённая кнопка — другого (нейтрального) цвета и мягко светится.
+          `<button class="btn small corner-btn${ui.topView ? ' top-view-on' : ''}" data-action="toggle-top-view">${
+            ui.topView ? `▼ ${t('hud.backToHand')}` : `▲ ${t('hud.topView')}`
+          }</button>`
+    }
     ${plates}
     <div class="bottom">
       ${kicked}

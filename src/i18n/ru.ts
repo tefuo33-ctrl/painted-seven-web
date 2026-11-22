@@ -104,6 +104,8 @@ export const ru = {
   'hud.cameraHint': 'Тяните — вращать камеру, колесо — приблизить, двойное нажатие — рассмотреть',
   'status.dealing': 'Раздача…',
   'hud.skipDeal': 'Пропустить раздачу',
+  'hud.topView': 'Посмотреть на стол сверху',
+  'hud.backToHand': 'Вернуться к своим картам и сходить',
   'status.youDeal': 'Вы раздаёте…',
   'status.deals': 'Раздаёт {name}…',
   'status.thinksBid': '{name} думает над заказом…',

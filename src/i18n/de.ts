@@ -98,6 +98,8 @@ export const de: Dictionary = {
   'hud.cameraHint': 'Ziehen dreht die Kamera, Mausrad zoomt, Doppeltipp zeigt Details',
   'status.dealing': 'Es wird gegeben…',
   'hud.skipDeal': 'Geben überspringen',
+  'hud.topView': 'Tisch von oben ansehen',
+  'hud.backToHand': 'Zurück zu meinen Karten und ziehen',
   'status.youDeal': 'Du gibst…',
   'status.deals': '{name} gibt…',
   'status.thinksBid': '{name} überlegt die Ansage…',

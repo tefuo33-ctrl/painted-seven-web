@@ -98,6 +98,8 @@ export const en: Dictionary = {
   'hud.cameraHint': 'Drag to rotate the camera, scroll to zoom, double-tap to inspect',
   'status.dealing': 'Dealing…',
   'hud.skipDeal': 'Skip dealing',
+  'hud.topView': 'View the table from above',
+  'hud.backToHand': 'Back to my cards to play',
   'status.youDeal': 'You are dealing…',
   'status.deals': '{name} is dealing…',
   'status.thinksBid': '{name} is thinking about a bid…',

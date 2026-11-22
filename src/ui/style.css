@@ -535,11 +535,43 @@ body.scene-only #app {
 .hud.dealing .kicked {
   display: none;
 }
-.skip-deal {
+/* Кнопка в правом нижнем углу: «Пропустить раздачу» или «Посмотреть на стол сверху». */
+.corner-btn {
   position: absolute;
   right: 12px;
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 2;
+  max-width: calc(100% - 24px);
   pointer-events: auto;
+}
+
+/* Вид сверху включён: спокойный сине-зелёный (нейтральный к тёплой палитре) и мягкое свечение. */
+.btn.top-view-on {
+  background: #2c5459;
+  border-color: #8fc4bf;
+  color: #eaf6f4;
+  animation: top-view-glow 1.6s ease-in-out infinite;
+}
+
+.btn.top-view-on:hover {
+  border-color: #c4ece7;
+}
+
+@keyframes top-view-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(143, 196, 191, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(143, 196, 191, 0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn.top-view-on {
+    animation: none;
+    box-shadow: 0 0 12px rgba(143, 196, 191, 0.6);
+  }
 }
 
 .topbar {

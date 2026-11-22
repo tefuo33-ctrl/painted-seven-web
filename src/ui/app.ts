@@ -95,7 +95,7 @@ function store(key: string, value: unknown): void {
 const DEAL_SHOTS: ShotName[] = ['top', 'highSide', 'lowFar'];
 const DEAL_SHOT_SECONDS = 3;
 /** Сколько камера ещё держит вид сверху, когда дошёл мой ход, прежде чем вернуться к глазам. */
-const RETURN_DELAY_MS = 1000;
+const RETURN_DELAY_MS = 1500;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -115,6 +115,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     wardrobeTab: 'suit',
     selected: null,
     dealing: false,
+    topView: false,
     viewChanged: false,
     notice: null,
   };
@@ -192,7 +193,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
    * на стол сверху, мой веер убран; дошёл ход до меня — склейка обратно к глазам.
    * Исключение: взятку начинает сосед справа (он ходит прямо передо мной). Тогда камера
    * остаётся у глаз, пока я не брошу карту, — иначе она прыгнула бы вверх и сразу вниз.
-   * Дошёл ход до меня — камера ещё секунду держит вид сверху (видно, как легла последняя
+   * Дошёл ход до меня — камера ещё полторы секунды держит вид сверху (видно, как легла последняя
    * карта), веер пока убран, и только потом склейка к глазам — без резкого прыжка.
    * Раздачей камера управляет сама. Возвращает true, пока веер должен оставаться убранным.
    */
@@ -210,15 +211,31 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     const watchFromTop = handAway && !rightLeads;
     const director = stage.director;
     director.speed = gfx.dealSpeed;
+    // Игрок сам включил вид сверху (кнопка внизу справа): держим его, пока не выключит; веер убран.
+    if (ui.topView) {
+      window.clearTimeout(returnTimer);
+      returnTimer = 0;
+      if (director.mode === 'gameplay' || director.mode === 'toGameplay') director.cutTo('top');
+      return true;
+    }
     if (watchFromTop) {
       window.clearTimeout(returnTimer);
       returnTimer = 0;
+      returnNow = false;
       // Карты выбрасывают — один спокойный вид сверху, без смены ракурсов (склейкой от глаз).
       if (director.mode === 'gameplay' || director.mode === 'toGameplay') director.cutTo('top');
       return false;
     }
     if (director.mode !== 'top' && director.mode !== 'toTop') return false;
-    // Мой ход: ещё секунду смотрим сверху, потом склейка обратно к глазам.
+    // Игрок сам нажал «Вернуться к своим картам» — сразу, без ожидания.
+    if (returnNow) {
+      returnNow = false;
+      window.clearTimeout(returnTimer);
+      returnTimer = 0;
+      director.cutTo('gameplay');
+      return false;
+    }
+    // Мой ход: ещё полторы секунды смотрим сверху, потом склейка обратно к глазам.
     if (!returnTimer) {
       returnTimer = window.setTimeout(() => {
         returnTimer = 0;
@@ -232,6 +249,8 @@ export function startApp(root: HTMLElement, stage: Stage): void {
 
   /** Таймер склейки обратно к глазам, когда дошёл мой ход (0 — не запущен). */
   let returnTimer = 0;
+  /** Игрок только что выключил вид сверху — вернуться к глазам сразу. */
+  let returnNow = false;
 
   /** `pickup` — раздача закончилась, игроки берут карты в руки (значение — скорость анимаций). */
   function syncTable(options: { pickup?: number } = {}): void {
@@ -367,6 +386,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   async function dealIntro(): Promise<void> {
     if (!ui.dealing) {
       ui.dealing = true;
+      ui.topView = false; // раздачей камера управляет сама
       dealSkipped = false;
       dealShuffled = false;
       handOrder = []; // новая раздача — карты в обычном порядке
@@ -432,6 +452,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   function abortDeal(): void {
     dealSkipped = true;
     ui.dealing = false;
+    ui.topView = false;
     table.holdForDeal(false);
     stage.director.snap('gameplay');
   }
@@ -807,6 +828,15 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         break;
       case 'skip-deal':
         skipDeal();
+        break;
+      case 'toggle-top-view':
+        // Стол сверху ⇄ мои карты. Выключил — камера сразу к глазам (если сейчас мой ход
+        // или розыгрыш ещё не идёт; пока ходят другие, остаётся обычный вид сверху).
+        if (ui.dealing || ui.screen !== 'game') break;
+        ui.topView = !ui.topView;
+        returnNow = !ui.topView;
+        render();
+        syncTable();
         break;
       case 'open-lobby':
         ui.screen = 'lobby';
