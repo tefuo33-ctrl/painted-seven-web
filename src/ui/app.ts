@@ -186,16 +186,20 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   }
 
   /**
-   * Камера в розыгрыше (та же машина состояний, что и при раздаче). Наверх она уходит, только
-   * когда я уже бросил карту в эту взятку и жду остальных (и пока взятку забирают). Пока ходят
-   * те, кто передо мной, камера остаётся у глаз — иначе она прыгала бы вверх-вниз.
-   * Новая взятка, где я ещё не ходил, — склейка обратно к глазам. Раздачей камера управляет сама.
+   * Камера в розыгрыше (та же машина состояний, что и при раздаче): пока ход не мой — смотрю
+   * на стол сверху, мой веер убран; дошёл ход до меня — склейка обратно к глазам.
+   * Исключение: взятку начинает сосед справа (он ходит прямо передо мной). Тогда камера
+   * остаётся у глаз, пока я не брошу карту, — иначе она прыгнула бы вверх и сразу вниз.
+   * Раздачей камера управляет сама.
    */
-  function followTrickCamera(game: GameState): void {
+  function followTrickCamera(game: GameState, handAway: boolean): void {
     if (ui.dealing || ui.screen !== 'game') return;
+    const count = game.playerNames.length;
+    const rightNeighbour = (HUMAN + count - 1) % count; // ходит прямо передо мной
     const iPlayed = game.trick.some((play) => play.player === HUMAN);
-    const watchFromTop =
-      iPlayed && (game.phase === 'trickEnd' || (game.phase === 'playing' && game.turn !== HUMAN));
+    const leader = game.trick.length > 0 ? game.trick[0].player : game.turn;
+    const rightLeads = game.phase === 'playing' && !iPlayed && leader === rightNeighbour;
+    const watchFromTop = handAway && !rightLeads;
     const director = stage.director;
     director.speed = gfx.dealSpeed;
     if (watchFromTop) {
@@ -219,7 +223,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     table.selected = ui.selected;
     const state = tableState(game);
     table.sync(state, { pickup: options.pickup });
-    followTrickCamera(game);
+    followTrickCamera(game, state.handAway);
     const turn = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
     const active = turn === null ? null : seatOf(game, turn);
     marker.show(ui.screen === 'game' ? active : null);
