@@ -60,7 +60,7 @@ export interface DirectorSettings {
 }
 
 export const DEFAULT_DIRECTOR: DirectorSettings = {
-  transition: DEAL_TIMING.cameraUp,
+  transition: DEAL_TIMING.cameraBack,
   easing: 'cubic',
   shotLength: 3.2,
   zoom: 1,

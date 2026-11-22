@@ -336,6 +336,8 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   let dealSkipped = false;
   /** Колоду в этой раздаче уже потасовали (онлайн тасовка идёт, пока сервер раздаёт). */
   let dealShuffled = false;
+  /** Первая раздача с тех пор, как сели за стол: только в ней камера плавно «садится». */
+  let firstDeal = true;
 
   /** PREPARATION + CAMERA TRANSITION: блокируем всё, камера уходит наверх, раздающий тасует. */
   async function dealIntro(): Promise<void> {
@@ -349,7 +351,8 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     stage.director.speed = gfx.dealSpeed;
     if (dealSkipped) stage.director.snap('top');
     else if (stage.director.mode !== 'top') {
-      await stage.director.goTop('top');
+      // Раздача начинается сразу с вида сверху — склейкой, без подъёма камеры.
+      stage.director.cutTo('top');
       // Тасовка и раздача: ракурсы меняются склейками по кругу, не чаще раза в 3 секунды.
       // Режиссёр знает, сколько ещё продлится раздача, и не режет, если новый ракурс не успеет.
       const game = ui.game;
@@ -385,10 +388,12 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     if (game.hands.some((hand) => hand.length !== cards)) console.warn('Раздача: число карт не совпадает с раундом', game.hands);
     if (!dealSkipped) await sleep((DEAL_TIMING.hold * 1000) / speed); // итог раздачи (ракурсы ещё меняются)
     if (!alive()) return;
-    // Сначала камера плавно возвращается к глазам игрока (карты пока лежат на столе),
-    // и только потом игроки берут карты в руки — мои появляются в веере, когда камера уже внизу.
-    if (dealSkipped) stage.director.snap('gameplay');
+    // Сначала камера возвращается к глазам игрока (карты пока лежат на столе), и только потом
+    // игроки берут карты в руки — мои появляются в веере, когда камера уже внизу.
+    // Плавно, будто садимся за стол, — только в первой раздаче партии; дальше — склейкой.
+    if (dealSkipped || !firstDeal) stage.director.cutTo('gameplay');
     else await stage.director.goBack();
+    firstDeal = false;
     if (!alive()) return;
     syncTable({ pickup: dealSkipped ? 20 : speed });
     await waitForCards();
@@ -610,6 +615,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         }
         const dealtNow = next.dealt && (!previous || !previous.dealt || previous.roundIndex !== next.roundIndex);
 
+        if (ui.screen !== 'game') firstDeal = true; // только что сели за стол в комнате
         ui.game = next;
         ui.screen = 'game';
         if (previous && previous.turn !== next.turn) ui.selected = null;
@@ -719,6 +725,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     players.seat(skinsBySeat(skins));
     session++;
     abortDeal();
+    firstDeal = true; // сели за стол — первая раздача с плавным «садимся»
     working = false;
     lastTrickLength = game.trick.length;
     ui.game = game;
