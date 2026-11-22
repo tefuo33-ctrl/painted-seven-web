@@ -62,6 +62,22 @@ export class OrbitCamera {
   canRotate: (x: number, y: number) => boolean = () => true;
   private rotating = true;
   private leanBase = 0;
+  private isLocked = false;
+
+  /** Камерой сейчас управляет режиссёр (раздача сверху): мышь, колесо и пальцы её не двигают. */
+  get locked(): boolean {
+    return this.isLocked;
+  }
+  set locked(value: boolean) {
+    this.isLocked = value;
+    if (!value) return;
+    this.pointers.clear();
+    this.pinchDistance = 0;
+    if (this.leaning) {
+      this.leaning = false;
+      this.goal.distance = this.leanBase;
+    }
+  }
 
   constructor(camera: THREE.PerspectiveCamera, element: HTMLElement, view: OrbitView) {
     this.camera = camera;
@@ -72,6 +88,7 @@ export class OrbitCamera {
     // Правая кнопка мыши за столом приближает, контекстное меню браузера не нужно.
     element.addEventListener('contextmenu', (event) => event.preventDefault());
     element.addEventListener('pointerdown', (event) => {
+      if (this.isLocked) return;
       if (event.pointerType === 'mouse' && event.button === 2) {
         if (this.goal.eye && !this.leaning) {
           this.leaning = true;
@@ -156,6 +173,7 @@ export class OrbitCamera {
       'wheel',
       (event) => {
         event.preventDefault();
+        if (this.isLocked) return;
         if (this.goal.eye) {
           // За столом колесо подаёт камеру вперёд-назад в небольших пределах.
           this.goal.distance = THREE.MathUtils.clamp(

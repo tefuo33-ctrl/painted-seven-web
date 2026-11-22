@@ -6,6 +6,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { CameraDirector } from './cameraDirector';
 import { gfx, updateSnap } from './gfx';
 import { buildLocation } from './location';
 import { type Obstacle, type OrbitView, OrbitCamera } from './orbit';
@@ -58,6 +59,8 @@ export interface Stage {
   zoom(): number;
   /** Управление камерой (нужно для проверки сцены). */
   orbit: OrbitCamera;
+  /** Режиссёр камеры: вид игрока ⇄ вид сверху на раздачу (одна камера, одна машина состояний). */
+  director: CameraDirector;
   /** Применить изменённые настройки из `gfx`. */
   applySettings(): void;
   /** Добавить функцию, которая вызывается каждый кадр (time и delta — в секундах). */
@@ -186,6 +189,14 @@ export function createStage(container: HTMLElement): Stage {
   }
 
   const orbit = new OrbitCamera(camera, renderer.domElement, tableView(1.6));
+  // Пока режиссёр ведёт камеру (раздача сверху), игрок её не крутит; уходя наверх — возвращаемся
+  // к исходному виду, чтобы после раздачи камера пришла ровно на место игрока.
+  const director = new CameraDirector();
+  const chandeliers: THREE.Object3D[] = [];
+  director.onModeChange = (mode) => {
+    orbit.locked = mode !== 'gameplay';
+    if (mode === 'toTop') orbit.reset();
+  };
 
   /** Препятствия для камеры за столом: кресла соперников с сидящими в них игроками. */
   const tableObstacles: Obstacle[] = SEATS.slice(1).map((seat) => ({ x: seat.x, z: seat.z, radius: 3.3, top: 7.4 }));
@@ -293,6 +304,17 @@ export function createStage(container: HTMLElement): Stage {
         camera.fov = fov;
         camera.updateProjectionMatrix();
       }
+      // Раздача: режиссёр уводит камеру наверх и обратно (в обычном виде ничего не делает).
+      director.apply(camera, delta, fov);
+      // Сверху люстра закрыла бы стол — пока камера наверху, её не рисуем (свет остаётся).
+      if (!chandeliers.length) {
+        for (const name of ['chandelier', 'chandelier-fallback']) {
+          const object = scene.getObjectByName(name);
+          if (object) chandeliers.push(object);
+        }
+      }
+      const showChandelier = director.height < 0.35;
+      for (const object of chandeliers) object.visible = showChandelier;
     }
     if (view === 'wardrobe') {
       // Свет держится у камеры, чтобы персонаж был хорошо виден с любой стороны.
@@ -352,6 +374,7 @@ export function createStage(container: HTMLElement): Stage {
     consumeDrag: () => orbit.consumeDrag(),
     zoom: () => (view === 'table' ? orbit.zoom : 1),
     orbit,
+    director,
     onFrame(callback) {
       callbacks.push(callback);
     },

@@ -730,6 +730,9 @@ export function buildLocation(scene: THREE.Scene, background: THREE.Scene): Loca
   const attachY = 1.6 * metre;
   const chandelier = new THREE.Group();
   chandelier.position.set(0, attachY, 0);
+  // По имени её прячет камера раздачи (вид сверху), чтобы люстра не закрывала стол.
+  chandelier.name = 'chandelier';
+  fallback.name = 'chandelier-fallback';
   group.add(chandelier);
   new GLTFLoader().load(
     `${import.meta.env.BASE_URL}models/chandelier_voxel.glb`,
