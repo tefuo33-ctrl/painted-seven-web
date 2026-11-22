@@ -95,7 +95,7 @@ function store(key: string, value: unknown): void {
 const DEAL_SHOTS: ShotName[] = ['top', 'highSide', 'lowFar'];
 const DEAL_SHOT_SECONDS = 3;
 /** Сколько камера ещё держит вид сверху, когда дошёл мой ход, прежде чем вернуться к глазам. */
-const RETURN_DELAY_MS = 1500;
+const RETURN_DELAY_MS = 1000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -193,7 +193,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
    * на стол сверху, мой веер убран; дошёл ход до меня — склейка обратно к глазам.
    * Исключение: взятку начинает сосед справа (он ходит прямо передо мной). Тогда камера
    * остаётся у глаз, пока я не брошу карту, — иначе она прыгнула бы вверх и сразу вниз.
-   * Дошёл ход до меня — камера ещё полторы секунды держит вид сверху (видно, как легла последняя
+   * Дошёл ход до меня — камера ещё секунду держит вид сверху (видно, как легла последняя
    * карта), веер пока убран, и только потом склейка к глазам — без резкого прыжка.
    * Раздачей камера управляет сама. Возвращает true, пока веер должен оставаться убранным.
    */
@@ -235,7 +235,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       director.cutTo('gameplay');
       return false;
     }
-    // Мой ход: ещё полторы секунды смотрим сверху, потом склейка обратно к глазам.
+    // Мой ход: ещё секунду смотрим сверху, потом склейка обратно к глазам.
     if (!returnTimer) {
       returnTimer = window.setTimeout(() => {
         returnTimer = 0;
