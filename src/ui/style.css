@@ -535,13 +535,27 @@ body.scene-only #app {
 .hud.dealing .kicked {
   display: none;
 }
-/* Кнопка в правом нижнем углу: «Пропустить раздачу» или «Посмотреть на стол сверху». */
-.corner-btn {
+/* Кнопки в правом нижнем углу (снизу вверх): «Пропустить раздачу», вид сверху ⇄ мои карты,
+   «Камера сама». */
+.corner-btn,
+.corner-stack {
   position: absolute;
   right: 12px;
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   z-index: 2;
   max-width: calc(100% - 24px);
+  pointer-events: auto;
+}
+
+.corner-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.corner-stack .btn {
   pointer-events: auto;
 }
 
@@ -997,7 +1011,8 @@ body.scene-only #app {
     margin: 0;
   }
 
-  .corner-btn {
+  .corner-btn,
+  .corner-stack .btn {
     font-size: 12px;
     padding: 4px 8px;
   }
@@ -1048,5 +1063,26 @@ body.scene-only #app {
 @media (max-width: 719px) and (orientation: portrait) {
   .bottom .status-text {
     top: calc(env(safe-area-inset-top, 0px) + 78px);
+  }
+}
+
+/* Вертикальный телефон: веер занимает низ экрана (в виде сверху ~14 %, от глаз ~27 %),
+   поэтому кнопки вида и раздачи — у правого края на уровне стола и только значками
+   (подпись — во всплывающей подсказке), чтобы не закрывать свои карты. */
+@media (max-width: 719px) and (orientation: portrait) {
+  .corner-stack {
+    bottom: 42%;
+    right: 8px;
+  }
+
+  .corner-stack .btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 4px;
+    font-size: 18px;
+  }
+
+  .corner-stack .btn .label {
+    display: none;
   }
 }

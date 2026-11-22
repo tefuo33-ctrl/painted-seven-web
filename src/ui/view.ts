@@ -85,8 +85,14 @@ export interface UiState {
   selected: string | null;
   /** Идёт анимация (раздача, сбор взятки) — подсказка это учитывает. */
   dealing: boolean;
-  /** Игрок сам включил вид на стол сверху (кнопка внизу справа). */
+  /** Камера сейчас смотрит на стол сверху (сама или по выбору игрока). */
   topView: boolean;
+  /**
+   * Как игрок хочет смотреть: 'auto' — камера сама уходит наверх при раздаче и пока ходят
+   * другие; 'top' — всегда сверху; 'bottom' — всегда от своих глаз. Выбор держится, пока
+   * игрок не вернёт «авто», и анимации его не сбрасывают.
+   */
+  cameraPref: 'auto' | 'top' | 'bottom';
   /** Игрок повернул камеру — показываем кнопку «вернуть вид». */
   viewChanged: boolean;
   /** Короткое сообщение поверх стола (например, о штрафе за время). */
@@ -482,6 +488,24 @@ function actionsHtml(ui: UiState, game: GameState): string {
   return `<div class="bids">${buttons}</div>${notes.map((note) => `<p class="bid-note">${note}</p>`).join('')}`;
 }
 
+/**
+ * Кнопки в правом нижнем углу, снизу вверх: «Пропустить раздачу» (только во время раздачи),
+ * переключатель вида «стол сверху ⇄ мои карты» (всегда, и во время раздачи тоже) и «Камера: авто»,
+ * если игрок выбрал вид сам. Выбранный вид — нейтрального сине-зелёного цвета и мягко светится.
+ */
+function cornerButtonsHtml(ui: UiState): string {
+  const manual = ui.cameraPref !== 'auto';
+  // Значок + подпись; на узком телефоне подпись прячется (она остаётся в подсказке title).
+  const button = (action: string, icon: string, label: string, extra = '') =>
+    `<button class="btn small${extra}" data-action="${action}" title="${label}" aria-label="${label}"><span class="icon">${icon}</span><span class="label"> ${label}</span></button>`;
+  const view = ui.topView
+    ? button('toggle-top-view', '▼', t('hud.backToHand'), manual ? ' top-view-on' : '')
+    : button('toggle-top-view', '▲', t('hud.topView'), manual ? ' top-view-on' : '');
+  const auto = manual ? button('camera-auto', '⟲', t('hud.cameraAuto')) : '';
+  const skip = ui.dealing ? button('skip-deal', '⏭', t('hud.skipDeal')) : '';
+  return `<div class="corner-stack">${auto}${view}${skip}</div>`;
+}
+
 function hudHtml(ui: UiState, game: GameState): string {
   let plates = '';
   for (let player = 1; player < game.playerNames.length; player++) plates += plateHtml(game, player);
@@ -489,14 +513,7 @@ function hudHtml(ui: UiState, game: GameState): string {
   const kicked = game.autoPlay[HUMAN] ? `<p class="kicked">${t('hud.kicked')}</p>` : '';
   return `<div class="hud${ui.dealing ? ' dealing' : ''}${ui.topView ? ' top-view' : ''}">
     ${topbarHtml(ui, game)}
-    ${
-      ui.dealing
-        ? `<button class="btn small corner-btn" data-action="skip-deal">⏭ ${t('hud.skipDeal')}</button>`
-        : // Вид сверху ⇄ мои карты: включённая кнопка — другого (нейтрального) цвета и мягко светится.
-          `<button class="btn small corner-btn${ui.topView ? ' top-view-on' : ''}" data-action="toggle-top-view">${
-            ui.topView ? `▼ ${t('hud.backToHand')}` : `▲ ${t('hud.topView')}`
-          }</button>`
-    }
+    ${cornerButtonsHtml(ui)}
     ${plates}
     <div class="bottom">
       ${kicked}

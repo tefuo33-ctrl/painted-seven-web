@@ -374,6 +374,7 @@ export class TableView {
       myLabels.splice(myLabels.indexOf(trumpLabel), 1);
       myLabels.push(trumpLabel);
     }
+    const myCards = new Map(state.hands[0].flatMap((card) => (card ? [[cardLabel(card), card] as const] : [])));
 
     // Колода: верхняя карта — с самым большим номером.
     const deck = new Map(this.cards.filter((card) => card.key.startsWith('d:')).map((card) => [Number(card.key.slice(2)), card]));
@@ -397,7 +398,10 @@ export class TableView {
         // Последняя карта раздающего в раунде по 9 карт — козырь, ложится лицом вверх.
         const isTrump = state.trumpSeat === seat && round === state.hands[seat].length - 1 && state.trumpCard !== null;
         if (isTrump) card.setFace(state.trumpCard);
-        const target = this.zonePose(seat, round, state.hands[seat].length, isTrump);
+        // Свои карты я вижу всегда: они ложатся в мою зону лицом вверх (чужие — рубашкой).
+        const mine = seat === 0 ? (myCards.get(myLabels[round]) ?? null) : null;
+        if (mine) card.setFace(mine);
+        const target = this.zonePose(seat, round, state.hands[seat].length, isTrump || mine !== null);
 
         if (options.skipped()) {
           card.place(target);
