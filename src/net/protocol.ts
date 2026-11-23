@@ -20,7 +20,8 @@ export interface SeatInfo {
 /** Сообщения от браузера серверу. */
 export type ClientMessage =
   | { t: 'create'; clientId: string; name: string; skin: Skin; settings: Partial<RuleSettings> }
-  | { t: 'join'; clientId: string; code: string; name: string; skin: Skin }
+  /** `token` — секрет места из прошлого сообщения «room»: нужен, чтобы вернуться на своё место. */
+  | { t: 'join'; clientId: string; code: string; name: string; skin: Skin; token?: string }
   | { t: 'start' }
   /** Создатель комнаты меняет сложность ботов до начала игры. */
   /** Настройки комнаты (только создатель, до начала): сложность и сколько ботов посадить. */
@@ -46,6 +47,8 @@ export type ServerMessage =
       bots: number;
       /** Сколько мест свободно (столько ботов можно посадить самое большее). */
       freeSeats: number;
+      /** Секрет места получателя: сохранить и прислать при возвращении в комнату (join). */
+      token?: string;
     }
   /** `now` — время сервера: по нему браузер показывает общий для всех таймер хода. */
   | { t: 'state'; game: GameState; now: number }

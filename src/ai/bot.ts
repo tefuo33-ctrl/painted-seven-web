@@ -47,7 +47,8 @@ type Random = () => number;
 function unseenCards(state: GameState, player: number): Card[] {
   const known = [...state.hands[player], ...state.seen, ...state.trick.map((p) => p.card)];
   // Карта, показавшая козырь, лежит в остатке колоды (если остаток есть) — в игре её нет.
-  const stockTrump = state.trumpCard && currentRound(state).cards < 9 ? [state.trumpCard] : [];
+  // (Вдвоём и втроём остаток есть и в раундах по 9 карт.)
+  const stockTrump = state.trumpCard && currentRound(state).cards * playerCount(state) < 36 ? [state.trumpCard] : [];
   return createDeck().filter((card) => ![...known, ...stockTrump].some((k) => sameCard(k, card)));
 }
 
@@ -350,7 +351,8 @@ function searchBid(state: GameState, player: number, samples: number, selfish: n
     // Те, кто ещё не заказал, в этом мире заказывают по силе своей (случайной) руки.
     for (let other = 0; other < playerCount(world); other++) {
       if (other !== player && world.bids[other] === null) {
-        world.bids[other] = Math.round(handStrength(world.hands[other], world.trump));
+        const cards = currentRound(world).cards;
+        world.bids[other] = Math.min(cards, Math.max(0, Math.round(handStrength(world.hands[other], world.trump))));
       }
     }
     bids.forEach((bid, i) => {

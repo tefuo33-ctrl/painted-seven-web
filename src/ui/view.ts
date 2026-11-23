@@ -100,11 +100,14 @@ export interface UiState {
 }
 
 function signed(n: number): string {
+  // Только настоящие числа: что бы ни пришло с сервера, в страницу попадают лишь цифры.
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '0';
   return n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '0';
 }
 
 /** Число с настоящим знаком «минус». */
 function plain(n: number): string {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return '0';
   return n < 0 ? `−${Math.abs(n)}` : String(n);
 }
 

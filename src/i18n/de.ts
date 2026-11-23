@@ -196,6 +196,11 @@ export const de: Dictionary = {
   'err.notHost': 'Das darf nur der Ersteller des Raums.',
   'err.notInGame': 'Du bist nicht in diesem Spiel.',
   'err.notYourTurn': 'Du bist nicht am Zug.',
+  'err.cannotJoin': 'Beitritt nicht möglich: Raum existiert nicht, Spiel läuft schon oder er ist voll.',
+  'err.badRequest': 'Der Server hat die Anfrage nicht verstanden. Bitte Seite neu laden.',
+  'err.busy': 'Der Server ist gerade ausgelastet. Bitte in einer Minute erneut versuchen.',
+  'err.tooFast': 'Zu viele Aktionen hintereinander. Bitte kurz warten.',
+  'err.replaced': 'Du bist diesem Raum von einem anderen Tab oder Gerät beigetreten.',
 
   'wardrobe.title': 'Garderobe',
   'wardrobe.name': 'Dein Name',

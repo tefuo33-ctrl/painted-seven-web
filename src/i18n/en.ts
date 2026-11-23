@@ -196,6 +196,11 @@ export const en: Dictionary = {
   'err.notHost': 'Only the room creator can do this.',
   'err.notInGame': 'You are not in this game.',
   'err.notYourTurn': 'It is not your turn.',
+  'err.cannotJoin': 'Could not join: the room does not exist, the game has started, or it is full.',
+  'err.badRequest': 'The server did not understand the request. Please reload the page.',
+  'err.busy': 'The server is busy right now. Try again in a minute.',
+  'err.tooFast': 'Too many actions in a row. Please wait a moment.',
+  'err.replaced': 'You joined this room from another tab or device.',
 
   'wardrobe.title': 'Wardrobe',
   'wardrobe.name': 'Your name',

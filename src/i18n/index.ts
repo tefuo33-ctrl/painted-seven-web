@@ -20,7 +20,7 @@ let current: Language = 'ru';
 const listeners: (() => void)[] = [];
 
 function isLanguage(value: unknown): value is Language {
-  return typeof value === 'string' && value in LANGUAGES;
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(LANGUAGES, value);
 }
 
 /** Выбрать язык при запуске: сохранённый, иначе язык браузера, иначе русский. */
@@ -65,7 +65,7 @@ export function t(key: TextKey, params: Record<string, string | number> = {}): s
 
 /** Текст по ключу, который известен только во время работы (например, из данных о скинах). */
 export function tKey(key: string, params: Record<string, string | number> = {}): string {
-  return key in ru ? t(key as TextKey, params) : key;
+  return Object.prototype.hasOwnProperty.call(ru, key) ? t(key as TextKey, params) : key;
 }
 
 /** Буква ранга на карте: В/Д/К/Т, B/D/K/A или J/Q/K/A. */

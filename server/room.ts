@@ -1,6 +1,7 @@
 // Комната: до четырёх мест, партия и её ход. Играть можно вдвоём, втроём и вчетвером. Правила исполняются здесь, на сервере, —
 // браузеры получают только «вид игрока» без чужих карт.
 
+import { randomBytes } from 'node:crypto';
 import { chooseBid, chooseMove } from '../src/ai/bot';
 import {
   type BotLevel,
@@ -22,6 +23,7 @@ import { type SeatInfo, type ServerMessage, PLAYER_COUNT, viewFor } from '../src
 import { dealSeconds } from '../src/shared/dealTiming';
 import { pickBotNames } from '../src/shared/names';
 import { type Skin, randomGender, randomSkin } from '../src/shared/skin';
+import { cleanSettings } from './validate';
 
 /** Паузы (мс), чтобы игроки успевали следить за игрой и анимациями. */
 const BOT_DELAY = 900;
@@ -29,9 +31,25 @@ const TRICK_DELAY = 2300;
 const BEFORE_DEAL = 1400;
 /** Пауза перед следующим раундом, когда все готовы. */
 const NEXT_ROUND_DELAY = 1200;
+/**
+ * Даже с выключенным таймером комната не может зависнуть навсегда: через 10 минут без хода
+ * за игрока ходит бот, а через 5 минут ожидания готовности следующий раунд начинается сам.
+ */
+const MAX_TURN_WAIT = 10 * 60 * 1000;
+const MAX_READY_WAIT = 5 * 60 * 1000;
+/** Самая длинная пауза, которую умеет setTimeout (больше — Node превращает её в 1 мс). */
+const MAX_TIMEOUT = 2 ** 31 - 1;
 
 export interface Connection {
   send(message: ServerMessage): void;
+  /** Соединение ещё открыто (у поддельных соединений в тестах метода нет — считаются открытыми). */
+  isOpen?(): boolean;
+  /** Закрыть соединение (например, когда тот же игрок зашёл с другой вкладки). */
+  close?(): void;
+}
+
+function isOpen(connection: Connection | null): boolean {
+  return connection !== null && (connection.isOpen ? connection.isOpen() : true);
 }
 
 interface Seat {
@@ -41,6 +59,15 @@ interface Seat {
   connection: Connection | null;
   /** Готов к следующему раунду. */
   ready: boolean;
+  /**
+   * Секрет места: его знает только этот игрок (сервер выдаёт его при входе в комнату).
+   * Вернуться на место после перезагрузки можно, только назвав его, — одного clientId мало.
+   */
+  token: string;
+}
+
+function newToken(): string {
+  return randomBytes(16).toString('hex');
 }
 
 export class Room {
@@ -53,10 +80,14 @@ export class Room {
   private timer: ReturnType<typeof setTimeout> | null = null;
   lastActivity = Date.now();
 
-  constructor(code: string, hostId: string, settings: Partial<RuleSettings>) {
+  /** Когда началось ожидание готовности к следующему раунду (0 — не ждём). */
+  private readySince = 0;
+
+  constructor(code: string, hostId: string, settings: unknown) {
     this.code = code;
     this.hostId = hostId;
-    this.settings = settings;
+    // Только известные настройки в допустимых пределах (их присылает браузер создателя).
+    this.settings = cleanSettings(settings);
   }
 
   get started(): boolean {
@@ -65,7 +96,18 @@ export class Room {
 
   /** Есть ли в комнате хоть один человек на связи. */
   get alive(): boolean {
-    return this.seats.some((seat) => seat?.connection);
+    return this.seats.some((seat) => seat !== null && isOpen(seat.connection));
+  }
+
+  /** В комнате не осталось ни одного человека (до начала игры все ушли). */
+  get empty(): boolean {
+    return this.seats.every((seat) => seat === null || seat.clientId === null);
+  }
+
+  /** Секрет места игрока `clientId` (null — его нет в комнате). */
+  tokenOf(clientId: string): string | null {
+    const index = this.seatOf(clientId);
+    return index < 0 ? null : this.seats[index]!.token;
   }
 
   seatOf(clientId: string): number {
@@ -73,26 +115,44 @@ export class Room {
   }
 
   /** Посадить человека: вернуть на своё место при переподключении или занять свободное. */
-  join(clientId: string, name: string, skin: Skin, connection: Connection): number {
-    this.lastActivity = Date.now();
+  join(clientId: string, name: string, skin: Skin, connection: Connection, token: string | null = null): number {
     let index = this.seatOf(clientId);
+    let returned = false;
     if (index < 0) {
-      if (this.started) throw new Error('err.started');
+      // Не говорим, почему нельзя войти (идёт игра или мест нет): одна и та же ошибка.
+      if (this.started) throw new Error('err.cannotJoin');
       index = this.seats.findIndex((seat) => seat === null);
-      if (index < 0) throw new Error('err.full');
-      this.seats[index] = { clientId, name, skin, connection, ready: false };
+      if (index < 0) throw new Error('err.cannotJoin');
+      this.seats[index] = { clientId, name, skin, connection, ready: false, token: newToken() };
     } else {
       const seat = this.seats[index]!;
+      // Вернуться на место можно только с его секретом — иначе по одному clientId его можно было бы занять.
+      if (token !== seat.token) throw new Error('err.cannotJoin');
+      returned = !isOpen(seat.connection);
+      // На месте может сидеть только одно соединение: прежнее (другая вкладка) закрываем.
+      if (seat.connection && seat.connection !== connection) {
+        const old = seat.connection;
+        seat.connection = null;
+        try {
+          old.send({ t: 'error', message: 'err.replaced' });
+          old.close?.();
+        } catch {
+          // старое соединение уже закрыто
+        }
+      }
       seat.connection = connection;
       if (!this.started) {
         seat.name = name;
         seat.skin = skin;
       }
     }
+    this.lastActivity = Date.now();
     this.broadcastRoom();
     if (this.game) {
-      connection.send({ t: 'state', game: viewFor(this.game, index), now: Date.now() });
-      this.schedule(); // человек вернулся — бот больше не ходит за него
+      this.sendTo(connection, { t: 'state', game: viewFor(this.game, index), now: Date.now() });
+      // Человек вернулся — бот больше не ходит за него. Если он и так был на связи (просто
+      // переподключился), ничего не перепланируем: иначе частые переподключения тормозили бы игру.
+      if (returned) this.schedule();
     }
     return index;
   }
@@ -104,7 +164,14 @@ export class Room {
     // Закрылось старое соединение, а человек уже вернулся по новому — ничего не делаем.
     if (connection && this.seats[index]!.connection !== connection) return;
     if (this.started) this.seats[index]!.connection = null;
-    else this.seats[index] = null;
+    else {
+      this.seats[index] = null;
+      // Создатель ушёл до начала игры — права переходят к следующему человеку в комнате.
+      if (clientId === this.hostId) {
+        const next = this.seats.find((seat) => seat !== null && seat.clientId !== null);
+        if (next?.clientId) this.hostId = next.clientId;
+      }
+    }
     this.broadcastRoom();
     if (this.game) this.schedule(); // за отсутствующего ходит бот
   }
@@ -133,6 +200,7 @@ export class Room {
       skin: randomSkin(gender),
       connection: null,
       ready: true,
+      token: '',
     }));
     this.seats = [...humans, ...bots];
     this.game = createGame({
@@ -153,7 +221,8 @@ export class Room {
 
   play(clientId: string, card: Card, joker?: JokerChoice): void {
     const game = this.requireTurn(clientId);
-    playCard(game, game.turn, card, joker);
+    // Только масть и ранг: лишние поля из браузера в партию не попадают.
+    playCard(game, game.turn, { suit: card.suit, rank: card.rank }, joker);
     this.schedule();
   }
 
@@ -161,6 +230,8 @@ export class Room {
   ready(clientId: string): void {
     const index = this.seatOf(clientId);
     if (index < 0 || !this.game || this.game.phase !== 'roundEnd') return;
+    // Повторное «готов» ничего не меняет (и не откладывает следующий раунд).
+    if (this.seats[index]!.ready) return;
     this.seats[index]!.ready = true;
     this.broadcastRoom();
     this.schedule();
@@ -184,6 +255,8 @@ export class Room {
     const index = this.seatOf(clientId);
     if (!this.game || index < 0) throw new Error('err.notInGame');
     if (this.game.turn !== index) throw new Error('err.notYourTurn');
+    // Игрок выбыл из раунда за бездействие: до конца раунда за него ходит бот.
+    if (this.game.autoPlay[index]) throw new Error('err.notYourTurn');
     return this.game;
   }
 
@@ -201,21 +274,30 @@ export class Room {
     const game = this.game;
     if (!game) return;
     this.lastActivity = Date.now();
-    this.broadcastState();
+    // Сначала снимаем прежний таймер: что бы ни случилось дальше, двух таймеров не будет.
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.broadcastState();
 
     const after = (ms: number, action: () => void) => {
-      this.timer = setTimeout(() => {
-        this.timer = null;
-        try {
-          action();
-        } catch (error) {
-          console.error(`[${this.code}]`, error);
-        }
-        this.schedule();
-      }, ms);
+      this.timer = setTimeout(
+        () => {
+          this.timer = null;
+          try {
+            action();
+          } catch (error) {
+            console.error(`[${this.code}]`, error);
+          }
+          try {
+            this.schedule();
+          } catch (error) {
+            console.error(`[${this.code}] reschedule`, error);
+          }
+        },
+        Math.min(Math.max(0, ms), MAX_TIMEOUT),
+      );
     };
+    if (game.phase !== 'roundEnd') this.readySince = 0;
 
     switch (game.phase) {
       case 'deal':
@@ -253,6 +335,15 @@ export class Room {
             timeoutStrike(game); // штраф; после третьего подряд игрок выбывает из раунда
             game.turnStartedAt = Date.now();
           });
+        } else {
+          // Таймер выключен, но бесконечно ждать нельзя: через 10 минут за игрока ходит бот.
+          after(MAX_TURN_WAIT + pause, () => {
+            if (game.phase === 'bidding') placeBid(game, game.turn, chooseBid(game, game.turn, 'normal'));
+            else if (game.phase === 'playing') {
+              const move = chooseMove(game, game.turn, 'normal');
+              playCard(game, game.turn, move.card, move.joker);
+            }
+          });
         }
         break;
       }
@@ -260,14 +351,19 @@ export class Room {
         after(TRICK_DELAY, () => finishTrick(game));
         break;
       case 'roundEnd':
-        // Следующий раунд начинается, только когда готовы все люди на связи.
-        if (this.everyoneReady) {
-          after(NEXT_ROUND_DELAY, () => {
+        // Следующий раунд начинается, когда готовы все люди на связи
+        // (или когда ждём уже 5 минут — один молчащий игрок не держит всех).
+        if (this.readySince === 0) this.readySince = Date.now();
+        {
+          const startNext = () => {
             if (game.phase !== 'roundEnd') return;
             nextRound(game);
+            this.readySince = 0;
             for (const seat of this.seats) if (seat && seat.clientId !== null) seat.ready = false;
             this.broadcastRoom();
-          });
+          };
+          if (this.everyoneReady) after(NEXT_ROUND_DELAY, startNext);
+          else after(this.readySince + MAX_READY_WAIT - Date.now(), startNext);
         }
         break;
       default:
@@ -300,10 +396,19 @@ export class Room {
     };
   }
 
+  /** Отправить одному игроку; ошибка одного соединения не ломает комнату. */
+  private sendTo(connection: Connection, message: ServerMessage): void {
+    try {
+      connection.send(message);
+    } catch (error) {
+      console.error(`[${this.code}] send`, error);
+    }
+  }
+
   private broadcastRoom(): void {
     this.seats.forEach((seat, index) => {
       if (!seat?.connection) return;
-      seat.connection.send({
+      this.sendTo(seat.connection, {
         t: 'room',
         code: this.code,
         seats: Array.from({ length: this.seats.length }, (_, i) => this.seatInfo((index + i) % this.seats.length)),
@@ -312,6 +417,7 @@ export class Room {
         botLevel: this.botLevel,
         bots: this.started ? this.seats.filter((s) => s?.clientId === null).length : this.plannedBots(),
         freeSeats: this.started ? 0 : this.seats.filter((s) => s === null).length,
+        token: seat.token,
       });
     });
   }
@@ -320,11 +426,12 @@ export class Room {
     const game = this.game;
     if (!game) return;
     this.seats.forEach((seat, index) => {
-      seat?.connection?.send({ t: 'state', game: viewFor(game, index), now: Date.now() });
+      if (seat?.connection) this.sendTo(seat.connection, { t: 'state', game: viewFor(game, index), now: Date.now() });
     });
   }
 
   dispose(): void {
     if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
   }
 }

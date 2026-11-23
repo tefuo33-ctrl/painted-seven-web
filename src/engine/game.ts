@@ -291,7 +291,8 @@ export function playCard(
     throw new Error('Этой картой сейчас ходить нельзя');
   }
 
-  const play: Play = { player, card };
+  // В партию попадают только масть и ранг: лишние поля (например, из сообщения браузера) отбрасываются.
+  const play: Play = { player, card: { suit: card.suit, rank: card.rank } };
   if (isJoker(card)) {
     const choice = joker ?? { mode: 'high' };
     if (choice.mode !== 'high' && choice.mode !== 'low') throw new Error('Неизвестный режим джокера');
@@ -309,7 +310,9 @@ export function playCard(
   }
 
   const hand = state.hands[player];
-  hand.splice(hand.findIndex((c) => sameCard(c, card)), 1);
+  const index = hand.findIndex((c) => sameCard(c, card));
+  if (index < 0) throw new Error('Такой карты нет на руке');
+  hand.splice(index, 1);
   state.trick.push(play);
 
   if (state.trick.length === playerCount(state)) {
@@ -327,6 +330,7 @@ export function finishTrick(state: GameState): void {
     throw new Error('Взятка ещё не сыграна');
   }
   const winner = state.trickWinner;
+  if (!Number.isInteger(winner) || winner < 0 || winner >= playerCount(state)) throw new Error('Неизвестный победитель взятки');
   state.taken[winner]++;
   state.seen.push(...state.trick.map((play) => play.card));
   state.trick = [];
@@ -404,6 +408,9 @@ export function totals(state: GameState): number[] {
 
 /** Победители — все, у кого максимум очков (при равенстве победу делят). */
 export function winners(scores: number[]): number[] {
-  const best = Math.max(...scores);
+  // Только настоящие числа: «не число» в сумме не должно оставить партию без победителя.
+  const valid = scores.filter((s) => Number.isFinite(s));
+  if (valid.length === 0) return [];
+  const best = Math.max(...valid);
   return scores.map((s, i) => (s === best ? i : -1)).filter((i) => i >= 0);
 }

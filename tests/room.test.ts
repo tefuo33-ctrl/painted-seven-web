@@ -215,7 +215,7 @@ describe('Готовность, таймер и сложность ботов', 
     const id = ['a', 'b', 'c', 'd'][game.turn];
     const startedAt = game.turnStartedAt;
     vi.advanceTimersByTime(20000);
-    room.join(id, id, DEFAULT_SKIN, fakeConnection()); // обновил страницу и вернулся
+    room.join(id, id, DEFAULT_SKIN, fakeConnection(), room.tokenOf(id)); // обновил страницу и вернулся
     expect(game.turnStartedAt).toBe(startedAt);
     vi.advanceTimersByTime(11000);
     expect(game.penalties[game.turn]).toBe(-10);

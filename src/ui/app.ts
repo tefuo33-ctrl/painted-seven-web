@@ -598,12 +598,29 @@ export function startApp(root: HTMLElement, stage: Stage): void {
 
   /** Код комнаты, в которой мы сейчас играем: после перезагрузки страницы вернёмся в неё. */
   const ROOM_KEY = 'painted-seven-room';
-  function rememberRoom(code: string | null): void {
+  /** Секрет места в этой комнате (выдаёт сервер): без него на своё место не вернуться. */
+  const TOKEN_KEY = 'painted-seven-room-token';
+  let roomToken = '';
+  function rememberRoom(code: string | null, token?: string): void {
+    if (!code) roomToken = '';
+    else if (token) roomToken = token;
     try {
       if (code) localStorage.setItem(ROOM_KEY, code);
       else localStorage.removeItem(ROOM_KEY);
+      if (!code) localStorage.removeItem(TOKEN_KEY);
+      else if (token) localStorage.setItem(TOKEN_KEY, token);
     } catch {
       // хранилище недоступно — просто не вернёмся автоматически
+    }
+  }
+  /** Секрет места, если мы входим в ту же комнату, где уже сидели. */
+  function tokenFor(code: string): string | undefined {
+    if (roomToken && ui.online?.code === code) return roomToken;
+    try {
+      if ((localStorage.getItem(ROOM_KEY) ?? '').toUpperCase() !== code) return undefined;
+      return localStorage.getItem(TOKEN_KEY) ?? undefined;
+    } catch {
+      return undefined;
     }
   }
   function rememberedRoom(): string {
@@ -645,13 +662,15 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   function onServerMessage(message: ServerMessage): void {
     if (message.t === 'error') {
       // Комнаты больше нет (сервер перезапустился) или партия ушла без нас — не пытаемся вернуться.
-      if (message.message === 'err.noRoom' || message.message === 'err.started') rememberRoom(null);
+      if (message.message === 'err.noRoom' || message.message === 'err.started' || message.message === 'err.cannotJoin') {
+        rememberRoom(null);
+      }
       if (ui.screen === 'lobby') lobbyError(message.message);
       else console.error(message.message);
       return;
     }
     if (message.t === 'room') {
-      rememberRoom(message.code);
+      rememberRoom(message.code, message.token);
       ui.online = {
         status: 'ready',
         code: message.code,
@@ -930,6 +949,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
             code: ui.joinCode,
             name: displayName(ui.profile),
             skin: ui.profile.skin,
+            token: tokenFor(ui.joinCode),
           }),
         );
         break;
@@ -1152,7 +1172,9 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   });
 
   // Для проверки из консоли браузера.
-  Object.assign(window, { paintedSeven: { ui, table, players, stage, tapCard, isWorking: () => working } });
+  if (import.meta.env.DEV) {
+    Object.assign(window, { paintedSeven: { ui, table, players, stage, tapCard, isWorking: () => working } });
+  }
 
   // Открыли ссылку-приглашение (?room=КОД) — сразу показываем вход в комнату.
   // Перезагрузили страницу посреди сетевой игры — сразу возвращаемся на своё место.
