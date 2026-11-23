@@ -48,10 +48,12 @@ export interface HandAnchor {
 /**
  * Колода лежит справа от того, кто раздаёт (слитки — слева от каждого), на его краю стола.
  * Как только карты розданы, колода переезжает к следующему раздающему.
- * Открытый козырь лежит под колодой поперёк и чуть ближе к центру — видны его концы с индексами.
+ * Открытый козырь лежит рядом с колодой, ближе к центру стола, целиком на виду — его видят все.
  */
 const DECK_RIGHT = 3.6;
 const DECK_FROM_CENTER = 4.8;
+/** Насколько ближе к центру стола, чем колода, лежит открытый козырь (колода его не закрывает). */
+const TRUMP_INWARD = 1.75;
 /** Круг, по которому ложатся карты взятки: центр чуть дальше от меня, чем центр стола. */
 const TRICK_CENTER_Z = -0.5;
 /** Радиус круга взятки: каждая карта — перед тем, кто ею сходил. */
@@ -141,7 +143,7 @@ export class TableView {
     const position = seatPoint(seat, DECK_RIGHT, 0.06, DECK_FROM_CENTER);
     return {
       position,
-      trump: seatPoint(seat, DECK_RIGHT, 0.03, DECK_FROM_CENTER - 0.45),
+      trump: seatPoint(seat, DECK_RIGHT, 0.03, DECK_FROM_CENTER - TRUMP_INWARD),
       yaw: SEATS[seat].angle + 0.1,
     };
   }
@@ -225,9 +227,9 @@ export class TableView {
     };
   }
 
-  /** Козырь лежит открытым под колодой, поперёк неё. */
+  /** Козырь лежит открытым рядом с колодой (ближе к центру), чуть крупнее обычной карты. */
   private trumpRestPose(): Pose {
-    return { position: this.deckSpot.trump.clone(), quaternion: lying(this.deckSpot.yaw + Math.PI / 2, true), scale: 1 };
+    return { position: this.deckSpot.trump.clone(), quaternion: lying(this.deckSpot.yaw, true), scale: 1.15 };
   }
 
   /**
