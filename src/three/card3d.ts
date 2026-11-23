@@ -62,14 +62,16 @@ function getMaterials(): Record<Look, THREE.MeshLambertMaterial> {
       normal: cut(retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0xe4e0d8 }))),
       // Затемнённая карта: ею сейчас ходить нельзя.
       dim: cut(retro(new THREE.MeshLambertMaterial({ map, flatShading: true, color: 0x6c6a7c }))),
-      // Подсвеченная карта: ею можно ходить.
+      // Подсвеченная карта: ею можно ходить (или все карты, пока я заказываю). Светится сама
+      // (emissive по картинке карты): веер у самой камеры, далеко от лампы и лицом от неё —
+      // без своего свечения он выглядел тёмным.
       lit: cut(
-        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x4a3818, emissiveMap: map, color: 0xeae6de })),
+        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0xe8e2d6, emissiveMap: map, color: 0xeae6de })),
         0.88, // подсвеченная — чуть ярче обычной, но тоже без ореола
       ),
       // Выбранная карта: светится ярче остальных.
       chosen: cut(
-        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0x7a5c20, emissiveMap: map, color: 0xeae6de })),
+        retro(new THREE.MeshLambertMaterial({ map, flatShading: true, emissive: 0xfff2d8, emissiveMap: map, color: 0xeae6de })),
         0.88,
       ),
     };
