@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { type Card, type Suit, cardLabel, isJoker } from '../engine';
-import { CARD_SIZE, Card3D, type MoveOptions, type Pose, type PoseSource } from './card3d';
+import { CARD_H, CARD_SIZE, CARD_W, Card3D, type MoveOptions, type Pose, type PoseSource } from './card3d';
 import { PALETTE, glow } from './gfx';
 import { GoldBars } from './goldBars';
 import { DEAL_TIMING, dealInterval } from '../shared/dealTiming';
@@ -702,6 +702,36 @@ export class TableView {
       const card3d = this.cards.find((c) => c.key === `c:${label}`);
       return card3d ? [{ label, x: this.stage.toScreen(card3d.mesh.position).x }] : [];
     });
+  }
+
+  /**
+   * Верхний край моего веера на экране (пиксели от верха), чтобы подсказки и заказ стояли над картами.
+   * Приподнятые под указателем и выбранная карта не считаются — иначе панель прыгала бы за мышью.
+   * null — веера на экране нет (карт нет или он убран вниз).
+   */
+  handScreenTop(): number | null {
+    const mine = this.state?.hands[0] ?? [];
+    const corner = new THREE.Vector3();
+    let top = Infinity;
+    let bottomEdge = -Infinity;
+    for (const card of mine) {
+      if (!card) continue;
+      const label = cardLabel(card);
+      if (label === this.hovered || label === this.selected) continue;
+      const card3d = this.cards.find((c) => c.key === `c:${label}`);
+      if (!card3d?.mesh.visible) continue;
+      for (const [x, y] of [[-0.5, 0.5], [0.5, 0.5], [-0.5, -0.5], [0.5, -0.5]]) {
+        corner.set(x * CARD_W, y * CARD_H, 0).applyMatrix4(card3d.mesh.matrixWorld);
+        const point = this.stage.toScreen(corner);
+        top = Math.min(top, point.y);
+        bottomEdge = Math.max(bottomEdge, point.y);
+      }
+    }
+    if (!Number.isFinite(top)) return null;
+    // Веер убран вниз за экран (почти весь ниже нижнего края).
+    const height = this.stage.canvas.clientHeight;
+    if (top > height - 12 || bottomEdge < 0) return null;
+    return top;
   }
 
   /** Есть ли карты в полёте. */

@@ -317,6 +317,13 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   /** Таблички соперников стоят над их головами: считаем место на экране каждый кадр. */
   const anchor = new THREE.Vector3();
   function positionPlates(): void {
+    // Подсказка, заказ и моя табличка — всегда над моими картами, а не поверх них.
+    const bottom = root.querySelector<HTMLElement>('.hud .bottom');
+    if (bottom) {
+      const top = ui.screen === 'game' ? table.handScreenTop() : null;
+      const lift = top === null ? '' : `${Math.round(root.clientHeight - top + 6)}px`;
+      if (bottom.style.bottom !== lift) bottom.style.bottom = lift;
+    }
     root.querySelectorAll<HTMLElement>('.plate[data-seat]').forEach((plate) => {
       const seat = Number(plate.dataset.seat);
       if (seat === 0) return;
