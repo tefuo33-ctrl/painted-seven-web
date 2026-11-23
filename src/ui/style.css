@@ -1,5 +1,26 @@
 /* Стили интерфейса поверх 3D-сцены. Сначала телефон (вертикально), потом широкие экраны. */
 
+/* ---------- Шрифты (лежат в public/fonts, лицензия SIL OFL 1.1 — файлы OFL-*.txt рядом) ----------
+   Press Start 2P — пиксельный, как в старых аркадах: заголовки, кнопки, цифры, таблички.
+     В нём есть все буквы игры: русские, немецкие, английские.
+   Pixelify Sans — пиксельный, но легче читается: обычный текст на латинице (английский, немецкий).
+     Русских заглавных «О» и «П» в нём нет, поэтому русский обычный текст остаётся прежним
+     моноширинным шрифтом (unicode-range ниже — только латиница). */
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('/fonts/PressStart2P-Regular.ttf') format('truetype');
+  font-weight: 400 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: url('/fonts/PixelifySans.ttf') format('truetype');
+  font-weight: 400 700;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122;
+}
+
 :root {
   --felt: #1f3b2b;
   --panel: rgba(20, 16, 22, 0.78);
@@ -12,6 +33,9 @@
   --black: #1a1a22;
   --paper: #ebe6d6;
   --paper-line: #cfc8b0;
+  /* Обычный текст и пиксельный «аркадный» шрифт (см. «Шрифты» выше). */
+  --font-text: 'Pixelify Sans', 'Courier New', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  --font-pixel: 'Press Start 2P', 'Courier New', ui-monospace, monospace;
   color-scheme: dark;
 }
 
@@ -29,7 +53,7 @@ body {
 body {
   background: #231d48;
   color: var(--ink);
-  font-family: 'Courier New', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-text);
   font-weight: 700;
   font-size: 15px;
   line-height: 1.3;
@@ -1107,4 +1131,108 @@ body.scene-only #app {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---------- Пиксельный шрифт: заголовки, кнопки, цифры ----------
+   Press Start 2P заметно крупнее и шире обычного шрифта того же размера, поэтому размеры здесь
+   меньше; по возможности кратны 4 px — тогда пиксели букв ровные. */
+.menu h1 {
+  font-family: var(--font-pixel);
+  font-size: 28px;
+  line-height: 1.3;
+}
+
+.subtitle,
+.modal h2 {
+  font-family: var(--font-pixel);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.btn {
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.btn.small,
+.btn.seg,
+.btn.tab,
+.btn.option,
+.btn.lang {
+  font-size: 10px;
+}
+
+.btn.bid {
+  font-size: 16px;
+}
+
+.btn.suit-btn {
+  font-family: var(--font-text);
+}
+
+.round-info,
+.plate,
+.timer,
+.joker-badge,
+.trump-box,
+.sheet thead th,
+.sheet tfoot td,
+.sheet td b {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.round-info .mode {
+  font-size: 10px;
+}
+
+.plate-bid b,
+.sheet tfoot td {
+  font-size: 12px;
+}
+
+@media (min-width: 720px) {
+  .menu h1 {
+    font-size: 36px;
+  }
+
+  .btn {
+    font-size: 14px;
+  }
+
+  .btn.small,
+  .btn.seg,
+  .btn.tab,
+  .btn.option,
+  .btn.lang {
+    font-size: 11px;
+  }
+
+  .btn.bid {
+    font-size: 20px;
+  }
+
+  .round-info,
+  .plate,
+  .timer,
+  .joker-badge,
+  .trump-box {
+    font-size: 12px;
+  }
+
+  .plate-bid b {
+    font-size: 14px;
+  }
+}
+
+/* Значки мастей — обычным шрифтом: в Press Start 2P они мелкие и непохожие. */
+.suit {
+  font-family: var(--font-text);
+}
+
+.trump-box .suit {
+  font-size: 1.5em;
+  line-height: 1;
 }
