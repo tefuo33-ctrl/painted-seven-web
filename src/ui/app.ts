@@ -261,9 +261,14 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     const state = tableState(game);
     followTrickCamera();
     // Камера сверху — свои карты видны всегда (маленький веер у нижнего края), в любой фазе.
-    ui.topView = stage.director.mode !== 'gameplay';
-    table.compactHand = ui.topView;
-    if (ui.topView) state.handAway = false;
+    // Пока камера переезжает между видами, веер убран вниз: он привязан к камере и иначе
+    // странно растягивался бы по пути; на месте он появляется уже в нужном виде.
+    const mode = stage.director.mode;
+    const moving = mode === 'toTop' || mode === 'toGameplay';
+    ui.topView = mode === 'top' || mode === 'toTop';
+    table.compactHand = mode === 'top';
+    if (moving) state.handAway = true;
+    else if (ui.topView) state.handAway = false;
     table.sync(state, { pickup: options.pickup });
     const turn = !ui.dealing && (game.phase === 'bidding' || game.phase === 'playing') ? game.turn : null;
     const active = turn === null ? null : seatOf(game, turn);
@@ -274,6 +279,10 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   /** Таблички соперников стоят над их головами: считаем место на экране каждый кадр. */
   const anchor = new THREE.Vector3();
   function positionPlates(): void {
+    // Пока камера переезжает между видами, таблички и подсказки плавно прячутся — иначе они
+    // скачут по экрану вслед за камерой.
+    const mode = stage.director.mode;
+    root.classList.toggle('camera-moving', mode === 'toTop' || mode === 'toGameplay');
     // Подсказка, заказ и моя табличка — всегда над моими картами, а не поверх них.
     const bottom = root.querySelector<HTMLElement>('.hud .bottom');
     if (bottom) {

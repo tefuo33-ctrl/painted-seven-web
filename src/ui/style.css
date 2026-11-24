@@ -1135,3 +1135,27 @@ body.scene-only #app {
   font-size: 1.5em;
   line-height: 1;
 }
+
+/* Камера переезжает между видами — таблички игроков и нижняя панель плавно прячутся. */
+.plate:not(.mine),
+.hud .bottom {
+  transition: opacity 0.2s ease;
+}
+
+.camera-moving .plate:not(.mine),
+.camera-moving .hud .bottom {
+  opacity: 0;
+}
+
+/* Название игры «Расписной покер» — пиксельным шрифтом. */
+.menu h1.game-title {
+  font-family: var(--font-pixel);
+  font-size: 26px;
+  line-height: 1.35;
+}
+
+@media (min-width: 720px) {
+  .menu h1.game-title {
+    font-size: 34px;
+  }
+}

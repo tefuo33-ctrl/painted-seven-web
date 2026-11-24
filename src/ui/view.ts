@@ -179,7 +179,7 @@ function menuHtml(ui: UiState): string {
   return `<div class="menu">
     ${languageSwitchHtml()}
     <div class="menu-card">
-      <h1>${t('app.title')}</h1>
+      <h1 class="game-title">${t('app.title')}</h1>
       <p class="subtitle">${t('app.subtitle')}</p>
       <button class="btn primary" data-action="start">${t('menu.playBots')}</button>
       ${ui.hasSave ? `<button class="btn" data-action="continue">${t('menu.continue')}</button>` : ''}
