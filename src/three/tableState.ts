@@ -52,8 +52,8 @@ export function tableStateFromGame(game: GameState, me: number): TableState {
     bidding: game.phase === 'bidding' && game.turn === me,
     taken: bySeat((player) => game.taken[player] ?? 0, 0),
     deckSeat: seatOf(game.dealt ? (game.dealer + 1) % count : game.dealer),
-    // В розыгрыше, пока ходят другие, мой веер убран; на мой ход (и при заказе) он на экране.
-    handAway: game.phase === 'trickEnd' || (game.phase === 'playing' && game.turn !== me),
+    // Свои карты видны всегда — и пока ходят другие.
+    handAway: false,
     dealerSeat: seatOf(game.dealer),
     // В «Минусах» и «Плюсах» заказа нет — и слитков тоже.
     bids: bySeat((player) => (hasBidding(currentRound(game).mode) ? (game.bids[player] ?? null) : null), null as number | null),
