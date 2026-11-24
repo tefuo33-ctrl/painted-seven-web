@@ -334,3 +334,33 @@ describe('Сервер не падает', () => {
     expect(result).toBe('rejected');
   });
 });
+
+describe('Пропуск раздачи в сетевой игре', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('пропуск видят все, и заказ начинается почти сразу', () => {
+    const room = new Room('ABCDE', 'a', { gameLength: 'full' });
+    const a = fakeConnection();
+    const b = fakeConnection();
+    room.join('a', 'Тим', DEFAULT_SKIN, a);
+    room.join('b', 'Оля', DEFAULT_SKIN, b);
+    room.start('a');
+    const game = room.game!;
+    vi.advanceTimersByTime(1500); // сервер раздал, у игроков идёт анимация
+    expect(game.phase).toBe('bidding');
+    const normalEnd = Date.now() + dealWait(game) - 1500;
+    room.skipDeal('b');
+    const seenByA = a.messages.find((m) => m.t === 'dealSkipped');
+    const seenByB = b.messages.find((m) => m.t === 'dealSkipped');
+    expect(seenByA).toEqual({ t: 'dealSkipped', name: 'Оля', self: false });
+    expect(seenByB).toEqual({ t: 'dealSkipped', name: 'Оля', self: true });
+    // Ход начинается (или бот заказывает) задолго до конца обычной анимации.
+    vi.advanceTimersByTime(2500);
+    expect(game.turnStartedAt === 0 || game.turnStartedAt < normalEnd).toBe(true);
+    // Повторный пропуск в той же раздаче ничего не рассылает.
+    room.skipDeal('a');
+    expect(a.messages.filter((m) => m.t === 'dealSkipped')).toHaveLength(1);
+    room.dispose();
+  });
+});

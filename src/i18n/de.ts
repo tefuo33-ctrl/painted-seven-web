@@ -98,6 +98,7 @@ export const de: Dictionary = {
   'hud.cameraHint': 'Ziehen dreht die Kamera, Mausrad zoomt, Doppeltipp zeigt Details',
   'status.dealing': 'Es wird gegeben…',
   'hud.skipDeal': 'Geben überspringen',
+  'deal.skippedBy': '{name} überspringt das Austeilen',
   'hud.topView': 'Tisch von oben ansehen',
   'hud.backToHand': 'Auf meine Karten schauen',
   'hud.cameraAuto': 'Kamera automatisch',

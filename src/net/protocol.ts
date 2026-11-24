@@ -30,6 +30,8 @@ export type ClientMessage =
   | { t: 'ready' }
   | { t: 'bid'; bid: number }
   | { t: 'play'; card: Card; joker?: JokerChoice }
+  /** Пропустить анимацию раздачи — у всех за столом. */
+  | { t: 'skipDeal' }
   | { t: 'leave' };
 
 /** Сообщения от сервера браузеру. */
@@ -52,6 +54,8 @@ export type ServerMessage =
     }
   /** `now` — время сервера: по нему браузер показывает общий для всех таймер хода. */
   | { t: 'state'; game: GameState; now: number }
+  /** Кто-то нажал «Пропустить раздачу» — раздача у всех заканчивается сразу. `self` — это был получатель. */
+  | { t: 'dealSkipped'; name: string; self: boolean }
   | { t: 'error'; message: string };
 
 /** Заглушка вместо чужой карты: игроку виден только размер чужой руки. */

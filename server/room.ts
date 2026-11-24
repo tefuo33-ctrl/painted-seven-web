@@ -29,6 +29,8 @@ import { cleanSettings } from './validate';
 const BOT_DELAY = 900;
 const TRICK_DELAY = 2300;
 const BEFORE_DEAL = 1400;
+/** Раздачу пропустили: сколько ещё ждать, пока игроки возьмут карты в руки (мс). */
+const SKIPPED_DEAL_PAUSE = 900;
 /** Пауза перед следующим раундом, когда все готовы. */
 const NEXT_ROUND_DELAY = 1200;
 /**
@@ -237,6 +239,29 @@ export class Room {
     this.schedule();
   }
 
+  /**
+   * Игрок нажал «Пропустить раздачу»: раздача заканчивается у всех, все видят, кто пропустил.
+   * Сервер больше не ждёт конца анимации — заказ начинается почти сразу.
+   */
+  skipDeal(clientId: string): void {
+    const index = this.seatOf(clientId);
+    const game = this.game;
+    if (index < 0 || !game || this.dealSkipped) return;
+    const dealing = game.phase === 'deal' || Date.now() < this.dealEndsAt;
+    if (!dealing) return;
+    this.dealSkipped = true;
+    const name = this.seats[index]!.name;
+    this.seats.forEach((seat, i) => {
+      if (seat?.connection) this.sendTo(seat.connection, { t: 'dealSkipped', name, self: i === index });
+    });
+    if (game.phase === 'deal') return; // пауза после раздачи станет короткой (см. schedule)
+    // Раздача уже идёт у игроков: укорачиваем ожидание.
+    this.dealEndsAt = Date.now() + SKIPPED_DEAL_PAUSE;
+    if (game.turnStartedAt > this.dealEndsAt) game.turnStartedAt = this.dealEndsAt;
+    if (this.automatic(game.turn)) this.dealPause = SKIPPED_DEAL_PAUSE;
+    this.schedule();
+  }
+
   /** Создатель комнаты выбирает сложность ботов и их число (только до начала игры). */
   configure(clientId: string, botLevel?: BotLevel, bots?: number): void {
     if (clientId !== this.hostId) throw new Error('err.notHost');
@@ -298,6 +323,12 @@ export class Room {
       );
     };
     if (game.phase !== 'roundEnd') this.readySince = 0;
+    // Новая раздача — никто ещё не пропускал (повторные schedule в той же раздаче флаг не сбрасывают).
+    if (game.phase === 'deal' && this.dealRound !== game.roundIndex) {
+      this.dealRound = game.roundIndex;
+      this.dealSkipped = false;
+      this.dealEndsAt = 0;
+    }
 
     switch (game.phase) {
       case 'deal':
@@ -307,12 +338,13 @@ export class Room {
           // Камера сверху, тасовка, карты по одной, возврат камеры (src/shared/dealTiming.ts);
           // подъём камеры и тасовка у игроков уже шли, пока сервер ждал BEFORE_DEAL.
           const total = currentRound(game).cards * game.playerNames.length;
-          this.dealPause = Math.max(1600, dealSeconds(total) * 1000 - BEFORE_DEAL + 300);
+          this.dealPause = this.dealSkipped ? SKIPPED_DEAL_PAUSE : Math.max(1600, dealSeconds(total) * 1000 - BEFORE_DEAL + 300);
         });
         break;
       case 'bidding':
       case 'playing': {
         const pause = this.takeDealPause();
+        if (pause > 0) this.dealEndsAt = Date.now() + pause;
         if (this.automatic(game.turn)) {
           // За людей (отключившихся или выбывших) бот играет на обычном уровне.
           const level = this.seats[game.turn]?.clientId === null ? undefined : 'normal';
@@ -372,6 +404,11 @@ export class Room {
   }
 
   private dealPause = 0;
+  /** Когда у игроков закончится анимация раздачи (мс; 0 — раздачи сейчас нет). */
+  private dealEndsAt = 0;
+  /** В этой раздаче кто-то уже нажал «Пропустить». */
+  private dealSkipped = false;
+  private dealRound = -1;
   private botLevel: BotLevel = 'normal';
   /** Сколько ботов посадить (null — занять все свободные места). */
   private botCount: number | null = null;

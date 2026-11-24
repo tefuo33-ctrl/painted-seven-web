@@ -1,24 +1,13 @@
 /* Стили интерфейса поверх 3D-сцены. Сначала телефон (вертикально), потом широкие экраны. */
 
-/* ---------- Шрифты (лежат в public/fonts, лицензия SIL OFL 1.1 — файлы OFL-*.txt рядом) ----------
-   Press Start 2P — пиксельный, как в старых аркадах: заголовки, кнопки, цифры, таблички.
-     В нём есть все буквы игры: русские, немецкие, английские.
-   Pixelify Sans — пиксельный, но легче читается: обычный текст на латинице (английский, немецкий).
-     Русских заглавных «О» и «П» в нём нет, поэтому русский обычный текст остаётся прежним
-     моноширинным шрифтом (unicode-range ниже — только латиница). */
+/* ---------- Шрифты ----------
+   Обычный текст — моноширинный (как раньше). Press Start 2P (public/fonts, лицензия SIL OFL 1.1 —
+   файл OFL-PressStart2P.txt рядом) — только в заголовках окон («Раунд 2 сыгран», «Меню» и т. п.). */
 @font-face {
   font-family: 'Press Start 2P';
   src: url('/fonts/PressStart2P-Regular.ttf') format('truetype');
   font-weight: 400 900;
   font-display: swap;
-}
-
-@font-face {
-  font-family: 'Pixelify Sans';
-  src: url('/fonts/PixelifySans.ttf') format('truetype');
-  font-weight: 400 700;
-  font-display: swap;
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122;
 }
 
 :root {
@@ -33,8 +22,8 @@
   --black: #1a1a22;
   --paper: #ebe6d6;
   --paper-line: #cfc8b0;
-  /* Обычный текст и пиксельный «аркадный» шрифт (см. «Шрифты» выше). */
-  --font-text: 'Pixelify Sans', 'Courier New', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  /* Обычный текст и пиксельный шрифт заголовков окон (см. «Шрифты» выше). */
+  --font-text: 'Courier New', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   --font-pixel: 'Press Start 2P', 'Courier New', ui-monospace, monospace;
   color-scheme: dark;
 }
@@ -554,13 +543,12 @@ body.scene-only #app {
 /* Раздача (камера сверху): в центре внимания карты — таблички и нижняя панель не закрывают стол,
    остаётся только кнопка «Пропустить раздачу» внизу. */
 .hud.dealing .plate,
-.hud.dealing .status-text,
+.hud.dealing .status-text:not(.notice),
 .hud.dealing .mine-row,
 .hud.dealing .kicked {
   display: none;
 }
-/* Кнопки в правом нижнем углу (снизу вверх): «Пропустить раздачу», вид сверху ⇄ мои карты,
-   «Камера сама». */
+/* Кнопки в правом нижнем углу (снизу вверх): «Пропустить раздачу», вид сверху ⇄ мои карты. */
 .corner-btn,
 .corner-stack {
   position: absolute;
@@ -802,10 +790,10 @@ body.scene-only #app {
   font-weight: 700;
 }
 
+/* Кнопки окна — одна под другой, все одной ширины (не «плывут» ни на компьютере, ни на телефоне). */
 .modal-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 8px;
   padding: 12px 16px 14px;
 }
@@ -1131,98 +1119,11 @@ body.scene-only #app {
   }
 }
 
-/* ---------- Пиксельный шрифт: заголовки, кнопки, цифры ----------
-   Press Start 2P заметно крупнее и шире обычного шрифта того же размера, поэтому размеры здесь
-   меньше; по возможности кратны 4 px — тогда пиксели букв ровные. */
-.menu h1 {
-  font-family: var(--font-pixel);
-  font-size: 28px;
-  line-height: 1.3;
-}
-
-.subtitle,
+/* ---------- Пиксельный шрифт — только заголовки окон ---------- */
 .modal h2 {
   font-family: var(--font-pixel);
   font-size: 16px;
   line-height: 1.4;
-}
-
-.btn {
-  font-family: var(--font-pixel);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.btn.small,
-.btn.seg,
-.btn.tab,
-.btn.option,
-.btn.lang {
-  font-size: 10px;
-}
-
-.btn.bid {
-  font-size: 16px;
-}
-
-.btn.suit-btn {
-  font-family: var(--font-text);
-}
-
-.round-info,
-.plate,
-.timer,
-.joker-badge,
-.trump-box,
-.sheet thead th,
-.sheet tfoot td,
-.sheet td b {
-  font-family: var(--font-pixel);
-  font-size: 10px;
-  line-height: 1.6;
-}
-
-.round-info .mode {
-  font-size: 10px;
-}
-
-.plate-bid b,
-.sheet tfoot td {
-  font-size: 12px;
-}
-
-@media (min-width: 720px) {
-  .menu h1 {
-    font-size: 36px;
-  }
-
-  .btn {
-    font-size: 14px;
-  }
-
-  .btn.small,
-  .btn.seg,
-  .btn.tab,
-  .btn.option,
-  .btn.lang {
-    font-size: 11px;
-  }
-
-  .btn.bid {
-    font-size: 20px;
-  }
-
-  .round-info,
-  .plate,
-  .timer,
-  .joker-badge,
-  .trump-box {
-    font-size: 12px;
-  }
-
-  .plate-bid b {
-    font-size: 14px;
-  }
 }
 
 /* Значки мастей — обычным шрифтом: в Press Start 2P они мелкие и непохожие. */

@@ -92,7 +92,8 @@ export interface UiState {
    * другие; 'top' — всегда сверху; 'bottom' — всегда от своих глаз. Выбор держится, пока
    * игрок не вернёт «авто», и анимации его не сбрасывают.
    */
-  cameraPref: 'auto' | 'top' | 'bottom';
+  /** Вид, который игрок выбрал сам: стол сверху или свои карты. Сама камера его не меняет. */
+  cameraPref: 'top' | 'bottom';
   /** Игрок повернул камеру — показываем кнопку «вернуть вид». */
   viewChanged: boolean;
   /** Короткое сообщение поверх стола (например, о штрафе за время). */
@@ -180,7 +181,6 @@ function menuHtml(ui: UiState): string {
     <div class="menu-card">
       <h1>${t('app.title')}</h1>
       <p class="subtitle">${t('app.subtitle')}</p>
-      <p class="lead">${t('app.lead')}</p>
       <button class="btn primary" data-action="start">${t('menu.playBots')}</button>
       ${ui.hasSave ? `<button class="btn" data-action="continue">${t('menu.continue')}</button>` : ''}
       <button class="btn" data-action="open-lobby">${t('menu.friends')}</button>
@@ -492,21 +492,19 @@ function actionsHtml(ui: UiState, game: GameState): string {
 }
 
 /**
- * Кнопки в правом нижнем углу, снизу вверх: «Пропустить раздачу» (только во время раздачи),
- * переключатель вида «стол сверху ⇄ мои карты» (всегда, и во время раздачи тоже) и «Камера: авто»,
- * если игрок выбрал вид сам. Выбранный вид — нейтрального сине-зелёного цвета и мягко светится.
+ * Кнопки в правом нижнем углу, снизу вверх: «Пропустить раздачу» (только во время раздачи)
+ * и переключатель вида «стол сверху ⇄ мои карты». Камеру игрок переключает только сам.
+ * Вид сверху — нейтрального сине-зелёного цвета и мягко светится.
  */
 function cornerButtonsHtml(ui: UiState): string {
-  const manual = ui.cameraPref !== 'auto';
   // Значок + подпись; на узком телефоне подпись прячется (она остаётся в подсказке title).
   const button = (action: string, icon: string, label: string, extra = '') =>
     `<button class="btn small${extra}" data-action="${action}" title="${label}" aria-label="${label}"><span class="icon">${icon}</span><span class="label"> ${label}</span></button>`;
   const view = ui.topView
-    ? button('toggle-top-view', '▼', t('hud.backToHand'), manual ? ' top-view-on' : '')
-    : button('toggle-top-view', '▲', t('hud.topView'), manual ? ' top-view-on' : '');
-  const auto = manual ? button('camera-auto', '⟲', t('hud.cameraAuto')) : '';
+    ? button('toggle-top-view', '▼', t('hud.backToHand'), ' top-view-on')
+    : button('toggle-top-view', '▲', t('hud.topView'));
   const skip = ui.dealing ? button('skip-deal', '⏭', t('hud.skipDeal')) : '';
-  return `<div class="corner-stack">${auto}${view}${skip}</div>`;
+  return `<div class="corner-stack">${view}${skip}</div>`;
 }
 
 function hudHtml(ui: UiState, game: GameState): string {
@@ -520,7 +518,7 @@ function hudHtml(ui: UiState, game: GameState): string {
     ${plates}
     <div class="bottom">
       ${kicked}
-      <p class="status-text">${statusText(ui, game)}</p>
+      <p class="status-text${ui.notice ? ' notice' : ''}">${statusText(ui, game)}</p>
       <div class="actions">${actionsHtml(ui, game)}</div>
       <div class="mine-row">
         ${plateHtml(game, HUMAN)}
@@ -718,7 +716,7 @@ function overlayHtml(ui: UiState): string {
     case 'quit':
       return modalHtml(
         t('quit.title'),
-        `<p>${ui.online ? t('quit.online') : t('quit.solo')}</p><p class="hint">${t('hud.cameraHint')}</p>`,
+        `<p>${ui.online ? t('quit.online') : t('quit.solo')}</p>`,
         `<button class="btn" data-action="open-settings">${t('menu.settings')}</button>
          <button class="btn" data-action="open-rules">${t('menu.rules')}</button>
          <button class="btn" data-action="to-menu">${t('quit.leave')}</button>

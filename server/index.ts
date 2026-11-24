@@ -194,6 +194,9 @@ wss.on('connection', (socket: LiveSocket) => {
       case 'ready':
         room?.ready(clientId);
         break;
+      case 'skipDeal':
+        room?.skipDeal(clientId);
+        break;
       case 'config':
         room?.configure(clientId, cleanBotLevel(message.botLevel), cleanInt(message.bots, 0, 4));
         break;

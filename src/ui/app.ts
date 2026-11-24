@@ -94,9 +94,11 @@ function store(key: string, value: unknown): void {
  * низкий по диагонали — и снова по кругу. Сколько секунд держим каждый (при скорости 1).
  */
 const DEAL_SHOTS: ShotName[] = ['top', 'highSide', 'lowFar'];
-const DEAL_SHOT_SECONDS = 3;
-/** Сколько камера ещё держит вид сверху, когда дошёл мой ход, прежде чем вернуться к глазам. */
-const RETURN_DELAY_MS = 1000;
+const DEAL_SHOT_SECONDS = 2.4;
+/** Сколько секунд камера плавно переходит между видом сверху и своими картами (при скорости 1). */
+const VIEW_TRANSITION = 0.8;
+/** Первый раз за партию камера «садится» за стол медленнее. */
+const FIRST_SIT_TRANSITION = 1.6;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -117,7 +119,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     selected: null,
     dealing: false,
     topView: false,
-    cameraPref: 'auto',
+    cameraPref: 'bottom',
     viewChanged: false,
     notice: null,
   };
@@ -210,70 +212,25 @@ export function startApp(root: HTMLElement, stage: Stage): void {
   }
 
   /**
-   * Камера в розыгрыше (та же машина состояний, что и при раздаче): пока ход не мой — смотрю
-   * на стол сверху, мой веер убран; дошёл ход до меня — склейка обратно к глазам.
-   * Исключение: взятку начинает сосед справа (он ходит прямо передо мной). Тогда камера
-   * остаётся у глаз, пока я не брошу карту, — иначе она прыгнула бы вверх и сразу вниз.
-   * Дошёл ход до меня — камера ещё секунду держит вид сверху (видно, как легла последняя
-   * карта), веер пока убран, и только потом склейка к глазам — без резкого прыжка.
-   * Раздачей камера управляет сама. Возвращает true, пока веер должен оставаться убранным.
+   * Камера в партии: тот вид, который выбрал игрок (стол сверху или свои карты), — сама камера
+   * его не меняет. Раздачей камера управляет сама (dealIntro/dealOutro): ракурсы сверху.
    */
-  function followTrickCamera(game: GameState, handAway: boolean): void {
-    const director = stage.director;
-    director.speed = gfx.dealSpeed;
-    if (ui.screen !== 'game') return;
-    // Игрок сам выбрал вид — держим его всегда (и во время раздачи), анимации его не сбрасывают.
-    if (ui.cameraPref !== 'auto') {
-      stopReturnTimer();
-      applyCameraPref();
-      return;
-    }
-    if (ui.dealing) {
-      stopReturnTimer(); // раздачей камера в «авто» управляет сама (dealIntro/dealOutro)
-      return;
-    }
-    const count = game.playerNames.length;
-    const rightNeighbour = (HUMAN + count - 1) % count; // ходит прямо передо мной
-    const iPlayed = game.trick.some((play) => play.player === HUMAN);
-    const leader = game.trick.length > 0 ? game.trick[0].player : game.turn;
-    const rightLeads = game.phase === 'playing' && !iPlayed && leader === rightNeighbour;
-    const watchFromTop = handAway && !rightLeads;
-    if (watchFromTop) {
-      stopReturnTimer();
-      // Карты выбрасывают — один спокойный вид сверху, без смены ракурсов (склейкой от глаз).
-      if (director.mode === 'gameplay' || director.mode === 'toGameplay') {
-        director.play([]);
-        director.cutTo('top');
-      }
-      return;
-    }
-    if (director.mode !== 'top' && director.mode !== 'toTop') return;
-    // Мой ход: ещё секунду смотрим сверху (мои карты видны внизу), потом склейка к глазам.
-    if (!returnTimer) {
-      returnTimer = window.setTimeout(() => {
-        returnTimer = 0;
-        if (ui.dealing || ui.screen !== 'game' || ui.cameraPref !== 'auto') return;
-        stage.director.cutTo('gameplay');
-        syncTable();
-      }, RETURN_DELAY_MS);
-    }
+  function followTrickCamera(): void {
+    stage.director.speed = gfx.dealSpeed;
+    if (ui.screen !== 'game' || ui.dealing) return;
+    applyCameraPref();
   }
 
-  /** Таймер склейки обратно к глазам, когда дошёл мой ход (0 — не запущен). */
-  let returnTimer = 0;
-  function stopReturnTimer(): void {
-    window.clearTimeout(returnTimer);
-    returnTimer = 0;
-  }
-
-  /** Поставить камеру по выбору игрока («всегда сверху» / «всегда снизу») — сразу, склейкой. */
-  function applyCameraPref(): void {
+  /** Привести камеру к выбору игрока — плавным переходом (а не склейкой). */
+  function applyCameraPref(transition = VIEW_TRANSITION): void {
     const director = stage.director;
+    director.settings.transition = transition;
     if (ui.cameraPref === 'top') {
       director.play([]); // один спокойный ракурс сверху, без смены ракурсов
-      director.cutTo('top');
-    } else if (ui.cameraPref === 'bottom' && director.mode !== 'gameplay') {
-      director.cutTo('gameplay');
+      if (director.mode === 'gameplay' || director.mode === 'toGameplay') void director.goTop('top');
+      else if (director.mode === 'top') director.cutTo('top');
+    } else if (director.mode === 'top' || director.mode === 'toTop') {
+      void director.goBack();
     }
   }
 
@@ -302,7 +259,7 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     lastTrickLength = game.trick.length;
     table.selected = ui.selected;
     const state = tableState(game);
-    followTrickCamera(game, state.handAway);
+    followTrickCamera();
     // Камера сверху — свои карты видны всегда (маленький веер у нижнего края), в любой фазе.
     ui.topView = stage.director.mode !== 'gameplay';
     table.compactHand = ui.topView;
@@ -440,9 +397,9 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       render();
     }
     stage.director.speed = gfx.dealSpeed;
-    // Игрок сам выбрал вид («всегда сверху» / «всегда снизу») — раздача его не меняет.
-    if (ui.cameraPref !== 'auto') applyCameraPref();
-    else if (dealSkipped) stage.director.snap('top');
+    // Раздачу камера всегда снимает сверху — ракурсы меняются склейками; потом вернётся
+    // к виду, который выбрал игрок.
+    if (dealSkipped) stage.director.snap('top');
     else if (stage.director.mode !== 'top') {
       // Раздача начинается сразу с вида сверху — склейкой, без подъёма камеры.
       stage.director.cutTo('top');
@@ -484,9 +441,12 @@ export function startApp(root: HTMLElement, stage: Stage): void {
     // Сначала камера возвращается к глазам игрока (карты пока лежат на столе), и только потом
     // игроки берут карты в руки — мои появляются в веере, когда камера уже внизу.
     // Плавно, будто садимся за стол, — только в первой раздаче партии; дальше — склейкой.
-    if (ui.cameraPref !== 'auto') applyCameraPref(); // выбор игрока держится и после раздачи
-    else if (dealSkipped || !firstDeal) stage.director.cutTo('gameplay');
-    else await stage.director.goBack();
+    // Дальше — вид, который выбрал игрок: плавно (в первый раз за партию — медленнее, будто садимся).
+    if (dealSkipped && ui.cameraPref === 'bottom') stage.director.cutTo('gameplay');
+    else if (ui.cameraPref === 'bottom') {
+      stage.director.settings.transition = firstDeal ? FIRST_SIT_TRANSITION : VIEW_TRANSITION;
+      await stage.director.goBack();
+    } else applyCameraPref();
     firstDeal = false;
     if (!alive()) return;
     syncTable({ pickup: dealSkipped ? 20 : speed });
@@ -674,6 +634,12 @@ export function startApp(root: HTMLElement, stage: Stage): void {
       }
       if (ui.screen === 'lobby') lobbyError(message.message);
       else console.error(message.message);
+      return;
+    }
+    if (message.t === 'dealSkipped') {
+      // Кто-то за столом пропустил раздачу — у нас она тоже заканчивается сразу.
+      skipDeal();
+      if (!message.self) showNotice(t('deal.skippedBy', { name: message.name }));
       return;
     }
     if (message.t === 'room') {
@@ -896,6 +862,8 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         break;
       case 'skip-deal':
         skipDeal();
+        // В сетевой игре раздача пропускается у всех (сервер сообщит, кто пропустил).
+        net?.send({ t: 'skipDeal' });
         break;
       case 'toggle-lamp':
         gfx.lamp = !gfx.lamp;
@@ -903,23 +871,11 @@ export function startApp(root: HTMLElement, stage: Stage): void {
         render();
         break;
       case 'toggle-top-view':
-        // Стол сверху ⇄ мои карты — в любой момент, и во время раздачи. Выбор держится
-        // («всегда сверху» / «всегда снизу»), пока игрок не нажмёт «Камера сама».
+        // Стол сверху ⇄ мои карты — плавным переходом, в любой момент (и во время раздачи).
+        // Выбор держится, пока игрок сам не переключит обратно.
         if (ui.screen !== 'game') break;
         ui.cameraPref = ui.topView ? 'bottom' : 'top';
-        stopReturnTimer();
         applyCameraPref();
-        syncTable();
-        render();
-        break;
-      case 'camera-auto':
-        // Снова автоматика: при раздаче камера сама сверху, в розыгрыше — сверху, пока ходят другие.
-        if (ui.screen !== 'game') break;
-        ui.cameraPref = 'auto';
-        if (ui.dealing) {
-          stage.director.cutTo('top');
-          stage.director.play(DEAL_SHOTS, DEAL_SHOT_SECONDS);
-        }
         syncTable();
         render();
         break;

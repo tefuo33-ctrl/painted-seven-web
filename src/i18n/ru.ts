@@ -104,6 +104,7 @@ export const ru = {
   'hud.cameraHint': 'Тяните — вращать камеру, колесо — приблизить, двойное нажатие — рассмотреть',
   'status.dealing': 'Раздача…',
   'hud.skipDeal': 'Пропустить раздачу',
+  'deal.skippedBy': '{name} пропускает раздачу',
   'hud.topView': 'Посмотреть на стол сверху',
   'hud.backToHand': 'Смотреть на свои карты',
   'hud.cameraAuto': 'Камера сама',
