@@ -530,7 +530,8 @@ export class TableView {
         key: `c:${cardLabel(play.card)}`,
         face: play.card,
         pose: this.trickPose(play.seat, order, play.card),
-        move: { duration: 0.4, arc: 1.0 },
+        // Ход: карта ложится на стол ровно, без подскока (подскок — только у раздачи).
+        move: { duration: 0.4 },
         look: 'normal',
         prefer: `h${play.seat}:`,
       });
@@ -652,7 +653,7 @@ export class TableView {
   async collectTrick(winnerSeat: number): Promise<void> {
     const trick = this.cards.filter((card) => this.state?.trick.some((p) => `c:${cardLabel(p.card)}` === card.key));
     const pose = this.pilePose(winnerSeat);
-    await Promise.all(trick.map((card, i) => card.moveTo(pose, { duration: 0.5, delay: i * 0.05, arc: 0.6 })));
+    await Promise.all(trick.map((card, i) => card.moveTo(pose, { duration: 0.5, delay: i * 0.05 })));
     trick.forEach((card, i) => {
       card.mesh.visible = false;
       card.key = `x:t${i}`;
